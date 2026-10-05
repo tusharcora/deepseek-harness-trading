@@ -1,0 +1,208 @@
+/**
+ * Alpaca account reads and order operations. Submission never duplicates and never reports "not placed" for an
+ * order that may exist: after a duplicate-id rejection, a failure in transit, or an accepted but unreadable
+ * response, it looks the order up by client order id, twice, before reporting anything.
+ *
+ * @module @deepseek-ai/dsh-experimental-trading-alpaca/orders
+ */
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type {
+  AccountSnapshot, BrokerOrder, BrokerOrderId, BrokerOrderRequest, ClientOrderId, PositionSnapshot, TradingSymbol,
+} from '@deepseek-ai/dsh-experimental-trading'
+import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
+import type { AlpacaHttp } from './http.ts'
+import { decimalString, mapAccount, mapOrder, mapPosition, pathSymbol } from './map.ts'
+import type { RawRecord } from './types.ts'
+
+/** Alpaca's error code for a reused client order id. */
+const DUPLICATE_CLIENT_ORDER_ID = 40010001
+
+/** Waits used by submission confirmation and position closing. */
+export interface OrderTiming {
+  /** Wait before the second confirming lookup, milliseconds. */
+  readonly confirmDelayMs: number
+  /** Wait between checks that a symbol's cancelled orders are gone, milliseconds. */
+  readonly settleDelayMs: number
+  /** Maximum such checks before closing anyway. */
+  readonly settleChecks: number
+  /** Wait implementation. */
+  readonly sleep: (ms: number) => Promise<void>
+}
+
+interface MultiStatus { readonly symbol?: string; readonly status: number; readonly body?: RawRecord }
+
+function orderBody(request: BrokerOrderRequest): Record<string, unknown> {
+  return {
+    symbol: request.symbol.ticker,
+    side: request.side,
+    type: request.type,
+    time_in_force: request.timeInForce,
+    client_order_id: request.clientOrderId,
+    ...request.qty === undefined ? {} : { qty: decimalString(request.qty) },
+    ...request.notional === undefined ? {} : { notional: decimalString(request.notional) },
+    ...request.limitPrice === undefined ? {} : { limit_price: decimalString(request.limitPrice) },
+    ...request.stopPrice === undefined ? {} : { stop_price: decimalString(request.stopPrice) },
+    ...request.bracket === undefined ? {} : {
+      order_class: 'bracket',
+      take_profit: { limit_price: decimalString(request.bracket.takeProfit) },
+      stop_loss: { stop_price: decimalString(request.bracket.stopLoss) },
+    },
+  }
+}
+
+/**
+ * Find an order by its client order id.
+ * @param http - REST client.
+ * @param id - client order id.
+ * @returns the order, or undefined when Alpaca has none.
+ */
+export async function orderByClientId(http: AlpacaHttp, id: ClientOrderId): Promise<BrokerOrder | undefined> {
+  try {
+    return mapOrder(await http.request<RawRecord>('trading', 'GET', '/v2/orders:by_client_order_id', { query: { client_order_id: id } }))
+  } catch (error) {
+    if (error instanceof VenueError && error.code === 'not-found') return undefined
+    throw error
+  }
+}
+
+async function lookup(http: AlpacaHttp, id: ClientOrderId): Promise<BrokerOrder | undefined> {
+  try {
+    return await orderByClientId(http, id)
+  } catch (error) {
+    throw new VenueError(
+      `Alpaca did not confirm order ${id}; check open orders before proposing again (${(error as Error).message})`,
+      'unknown-outcome',
+    )
+  }
+}
+
+async function confirmTwice(http: AlpacaHttp, id: ClientOrderId, timing: OrderTiming): Promise<BrokerOrder | undefined> {
+  const first = await lookup(http, id)
+  if (first !== undefined) return first
+  await timing.sleep(timing.confirmDelayMs)
+  return lookup(http, id)
+}
+
+/**
+ * Submit an order without ever creating a duplicate or misreporting a placed order.
+ * @param http - REST client.
+ * @param request - planned order.
+ * @param timing - confirmation wait.
+ * @returns the accepted or already-existing order.
+ * @throws VenueError `unknown-outcome` when Alpaca may hold the order but did not confirm it.
+ */
+export async function submitOrder(http: AlpacaHttp, request: BrokerOrderRequest, timing: OrderTiming): Promise<BrokerOrder> {
+  let raw: RawRecord
+  try {
+    raw = await http.request<RawRecord>('trading', 'POST', '/v2/orders', { body: orderBody(request) })
+  } catch (error) {
+    // A non-VenueError comes from resolving the keys, before anything was sent.
+    if (!(error instanceof VenueError)) throw error
+    if (error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
+      const existing = await lookup(http, request.clientOrderId)
+      if (existing !== undefined) return existing
+      throw error
+    }
+    if (error.code !== 'unavailable') throw error
+    const found = await confirmTwice(http, request.clientOrderId, timing)
+    if (found !== undefined) return found
+    throw new VenueError('Alpaca is unavailable; the order was not placed', 'unavailable')
+  }
+  const accepted = readOwnOrder(raw, request.clientOrderId)
+  if (accepted !== undefined) return accepted
+  // Alpaca answered 2xx, so it accepted something: read the order back instead of trusting the body.
+  const found = await confirmTwice(http, request.clientOrderId, timing)
+  if (found !== undefined) return found
+  throw new VenueError(`Alpaca accepted order ${request.clientOrderId} but it could not be read back`, 'unknown-outcome')
+}
+
+/** Map a submission response, treating a body that names another client order id as unreadable. */
+function readOwnOrder(raw: RawRecord, id: ClientOrderId): BrokerOrder | undefined {
+  let order: BrokerOrder
+  try {
+    order = mapOrder(raw)
+  } catch (mapError) {
+    // A 2xx body that cannot be mapped still means Alpaca accepted something; the caller reads the order back.
+    void mapError
+    return undefined
+  }
+  return order.clientOrderId === id ? order : undefined
+}
+
+/**
+ * Read the account.
+ * @param http - REST client.
+ * @returns the account snapshot.
+ */
+export async function account(http: AlpacaHttp): Promise<AccountSnapshot> {
+  return mapAccount(await http.request<RawRecord>('trading', 'GET', '/v2/account'))
+}
+
+/**
+ * Read open positions.
+ * @param http - REST client.
+ * @returns every open position.
+ */
+export async function positions(http: AlpacaHttp): Promise<PositionSnapshot[]> {
+  return (await http.request<RawRecord[]>('trading', 'GET', '/v2/positions')).map(mapPosition)
+}
+
+/**
+ * Read open orders, optionally for one instrument.
+ * @param http - REST client.
+ * @param symbol - instrument filter.
+ * @returns up to 500 open orders.
+ */
+export async function openOrders(http: AlpacaHttp, symbol?: TradingSymbol): Promise<BrokerOrder[]> {
+  const query = { status: 'open', limit: 500, symbols: symbol === undefined ? undefined : pathSymbol(symbol) }
+  return (await http.request<RawRecord[]>('trading', 'GET', '/v2/orders', { query })).map(mapOrder)
+}
+
+/**
+ * Cancel one order.
+ * @param http - REST client.
+ * @param id - broker order id.
+ * @returns when Alpaca accepted the cancellation.
+ */
+export async function cancelOrder(http: AlpacaHttp, id: BrokerOrderId): Promise<void> {
+  await http.request('trading', 'DELETE', `/v2/orders/${encodeURIComponent(id)}`)
+}
+
+/**
+ * Cancel the instrument's open orders (they hold the shares), wait for them to clear, then close the position.
+ * @param http - REST client.
+ * @param symbol - instrument.
+ * @param timing - settle waits.
+ * @returns the closing order.
+ */
+export async function closePosition(http: AlpacaHttp, symbol: TradingSymbol, timing: OrderTiming): Promise<BrokerOrder> {
+  let resting = await openOrders(http, symbol)
+  for (const order of resting) {
+    try {
+      await cancelOrder(http, brandString<BrokerOrderId>(order.id))
+    } catch (cancelError) {
+      // An order already cancelled with its bracket sibling, or filling: the settle poll below decides.
+      void cancelError
+    }
+  }
+  for (let check = 0; check < timing.settleChecks && resting.length > 0; check++) {
+    await timing.sleep(timing.settleDelayMs)
+    resting = await openOrders(http, symbol)
+  }
+  return mapOrder(await http.request<RawRecord>('trading', 'DELETE', `/v2/positions/${encodeURIComponent(pathSymbol(symbol))}`))
+}
+
+/**
+ * Cancel every open order and close every position.
+ * @param http - REST client.
+ * @returns the closing orders.
+ * @throws VenueError `rejected` naming every position Alpaca could not close.
+ */
+export async function flatten(http: AlpacaHttp): Promise<BrokerOrder[]> {
+  const results = await http.request<MultiStatus[]>('trading', 'DELETE', '/v2/positions', { query: { cancel_orders: 'true' } })
+  const failed = results.filter(result => result.status >= 400)
+  if (failed.length > 0) {
+    throw new VenueError(`Alpaca could not close: ${failed.map(f => `${String(f.symbol)} (${String(f.status)})`).join(', ')}`, 'rejected')
+  }
+  return results.flatMap(result => (result.body === undefined ? [] : [mapOrder(result.body)]))
+}
