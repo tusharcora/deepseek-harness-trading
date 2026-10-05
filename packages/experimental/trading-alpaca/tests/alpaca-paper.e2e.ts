@@ -32,7 +32,7 @@ function paperVenue(): VenueCore {
     timing: { confirmDelayMs: 2_000, settleDelayMs: 500, settleChecks: 10, sleep },
     safetyTiming: { suspendRetryMs: [500, 1_000], sleep },
     store: orderedStore(INITIAL_SAFETY_STATE, async () => {}),
-    stream: () => ({ start: () => {}, stop: () => {} }), emitStatus: () => {} })
+    stream: () => ({ start: () => {}, stop: () => {} }), emitStatus: () => {}, warn: () => {} })
 }
 
 const btc = { assetClass: 'crypto', ticker: 'BTC/USD' } as const

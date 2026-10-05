@@ -223,7 +223,7 @@ describe('trading-alpaca real composition', () => {
 
   it('keeps a Halt clicked immediately before the venue plugin reloads', async () => {
     const ctx = await boot({ keys: 'environment', venue: false })
-    const plugin = ctx.plugin(TradingAlpaca.AlpacaVenue, venueConfig() as never)
+    const plugin = ctx.plugin(TradingAlpaca.AlpacaVenue, venueConfig())
     await vi.waitFor(() => { expect(ctx.get('tradingVenue')?.status()).toBe('ready') })
     const venue = venueOf(ctx)
     // Two Halts queue two writes, then the venue plugin alone reloads (HMR) while the storage stack stays up.
