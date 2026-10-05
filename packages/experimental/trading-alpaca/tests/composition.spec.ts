@@ -40,6 +40,8 @@ let streamAuthorized: boolean
 interface BootOptions {
   /** Where the keys come from; `none` boots without keys. */
   readonly keys: 'credentials' | 'environment' | 'none'
+  /** Whether cordis.yml mounts the venue; false leaves only the storage stack (and credentials). */
+  readonly venue?: boolean
 }
 
 async function boot(options: BootOptions): Promise<Context> {
@@ -64,15 +66,13 @@ async function boot(options: BootOptions): Promise<Context> {
         '    debounceMs: 10',
       ]
       : [],
-    "- name: '@deepseek-ai/dsh-experimental-trading-alpaca'",
-    '  config:',
-    `    tradingUrl: ${JSON.stringify(fake.url)}`,
-    `    dataUrl: ${JSON.stringify(fake.url)}`,
-    `    tradeStreamUrl: ${JSON.stringify(streamUrl)}`,
-    '    suspendRetryMs: [1]',
-    '    streamBackoffMs: [5]',
-    '    lookupConfirmMs: 0',
-    '    closeSettleMs: 0',
+    ...options.venue === false
+      ? []
+      : [
+        "- name: '@deepseek-ai/dsh-experimental-trading-alpaca'",
+        '  config:',
+        ...Object.entries(venueConfig()).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
+      ],
     '',
   ].join('\n'))
 
@@ -103,6 +103,11 @@ async function boot(options: BootOptions): Promise<Context> {
   await ctx.loader.await()
   return ctx
 }
+
+const venueConfig = (): Record<string, unknown> => ({
+  tradingUrl: fake.url, dataUrl: fake.url, tradeStreamUrl: streamUrl, suspendRetryMs: [1], streamBackoffMs: [5], lookupConfirmMs: 0,
+  closeSettleMs: 0,
+})
 
 const venueOf = (ctx: Context): TradingAlpaca.AlpacaVenue => {
   const venue = ctx.get('tradingVenue')
@@ -214,6 +219,23 @@ describe('trading-alpaca real composition', () => {
     await writeFile(join(root, '.credentials.yaml'), 'version: 1\nrefs:\n  ALPACA_API_KEY: k\n  ALPACA_SECRET_KEY: s2\n', { mode: 0o600 })
     await vi.waitFor(() => { expect(events[1]).toMatchObject({ kind: 'update', update: { event: 'fill' } }) })
     off()
+  })
+
+  it('keeps a Halt clicked immediately before the venue plugin reloads', async () => {
+    const ctx = await boot({ keys: 'environment', venue: false })
+    const plugin = ctx.plugin(TradingAlpaca.AlpacaVenue, venueConfig() as never)
+    await vi.waitFor(() => { expect(ctx.get('tradingVenue')?.status()).toBe('ready') })
+    const venue = venueOf(ctx)
+    // Two Halts queue two writes, then the venue plugin alone reloads (HMR) while the storage stack stays up.
+    const halting = [venue.halt('first halt'), venue.halt('last-moment halt')].map(async p => p.catch((error: unknown) => error))
+    await plugin.dispose()
+    expect(ctx.get('tradingVenue')).toBeUndefined()
+    await Promise.all(halting)
+    await ctx.fiber.dispose()
+    statuses = []
+    const ctx2 = await boot({ keys: 'environment' })
+    expect(ctx2.get('tradingVenue')?.status()).toBe('halted')
+    expect(statuses).toEqual([['halted', 'last-moment halt']])
   })
 
   it('resolves keys from the launch environment when no credentials provider is mounted', async () => {

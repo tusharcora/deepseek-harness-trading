@@ -345,6 +345,12 @@ export interface OrderedStore extends SafetyStateStore {
    * @param state - the state read from durable storage.
    */
   load(state: SafetyState): void
+  /**
+   * Wait for every persist requested so far, failed ones included; call before closing the durable storage so a
+   * just-saved Halt is not lost.
+   * @returns when all pending persists settled; never rejects.
+   */
+  flush(): Promise<void>
 }
 
 /**
@@ -367,5 +373,6 @@ export function orderedStore(initial: SafetyState, persist: (state: SafetyState)
       return write
     },
     load: (loaded) => { state = loaded },
+    flush: () => tail,
   }
 }

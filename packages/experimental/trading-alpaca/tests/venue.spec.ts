@@ -370,6 +370,30 @@ describe('orderedStore', () => {
     await second
   })
 
+  it('flushes: resolves once every pending persist settled, failed ones included', async () => {
+    const releases: { resolve: () => void; reject: (error: Error) => void }[] = []
+    const store = orderedStore(INITIAL_SAFETY_STATE, state => new Promise<void>((resolve, reject) => {
+      void state
+      releases.push({ resolve, reject })
+    }))
+    await store.flush()
+    const first = store.set(halted)
+    const firstFailed = expect(first).rejects.toThrow('disk full')
+    const second = store.set(pending)
+    let flushed = false
+    const flushing = store.flush().then(() => { flushed = true })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(flushed).toBe(false)
+    releases[0]?.reject(new Error('disk full'))
+    await firstFailed
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(flushed).toBe(false)
+    releases[1]?.resolve()
+    await second
+    await flushing
+    expect(flushed).toBe(true)
+  })
+
   it('keeps writing after a failed write and rejects only that write', async () => {
     const writes: SafetyState[] = []
     const store = orderedStore(INITIAL_SAFETY_STATE, async (state) => {

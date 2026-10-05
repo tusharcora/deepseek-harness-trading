@@ -101,7 +101,8 @@ export class AlpacaVenue extends TradingVenueGateway {
    */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(tradingSafetyDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'trading-alpaca domain close')
+    // Persist every pending Halt write before closing, so a Halt clicked just before a reload survives it.
+    this.ctx.effect(() => async () => { await this.store.flush(); await domain.close() }, 'trading-alpaca domain close')
     this.store.load(domain.global.get())
     this.domain.resolve(domain)
     await this.prepare()
