@@ -32,6 +32,7 @@
       "@deepseek-ai/dsh-browser-use/brand": ["./packages/browser-use/browser-use/src/brand.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-runtime": ["./packages/experimental/browser-use-runtime/src/index.ts"],
       "@deepseek-ai/dsh-experimental-trading": ["./packages/experimental/trading/src/index.ts"],
+      "@deepseek-ai/dsh-experimental-trading-alpaca": ["./packages/experimental/trading-alpaca/src/index.ts"],
       "@deepseek-ai/dsh-experimental-trading-venue": ["./packages/experimental/trading-venue/src/index.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": ["./packages/experimental/browser-use-playwright-mcp/src/index.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": ["./packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts"],
