@@ -3791,10 +3791,11 @@ describe.skipIf(keyId === undefined || secret === undefined)('Alpaca paper', () 
     expect(venue.status()).toBe('ready')
     expect((await venue.asset(btc)).symbol).toEqual(btc)
     const updates: OrderUpdate[] = []
+    const streamErrors: string[] = []
     const stream = new TradeUpdateStream({ url: 'wss://paper-api.alpaca.markets/stream', backoffMs: [1_000],
       keys: async () => ({ keyId: keyId ?? '', secret: secret ?? '' }),
       onEvent: event => { if (event.kind === 'update') updates.push(event.update) },
-      onError: error => { throw error } })
+      onError: error => { streamErrors.push(error.message) } })
     stream.start()
     await sleep(3_000)
     const quote = await venue.latestQuote(btc)
@@ -3812,6 +3813,7 @@ describe.skipIf(keyId === undefined || secret === undefined)('Alpaca paper', () 
     const events = (): string[] => updates.filter(u => u.order.clientOrderId === clientOrderId).map(u => u.event)
     for (let i = 0; i < 20 && !events().includes('canceled'); i++) await sleep(500)
     stream.stop()
+    expect(streamErrors).toEqual([])
     expect(events()).toContain('new')
     expect(events()).toContain('canceled')
   }, 60_000)
