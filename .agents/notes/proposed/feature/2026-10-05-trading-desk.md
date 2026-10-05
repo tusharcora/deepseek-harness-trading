@@ -10,7 +10,7 @@ DeepSeek Harness agents can read, write, and run code, but they cannot observe a
 
 ## Proposal
 
-Slice 1 adds a chat-driven trading desk as an opt-in `trading` profile built from five `packages/experimental/` packages. One agent analyzes markets through tools and proposes orders; the user approves each order on an approval card; the Trading sidebar panel shows live charts, the agent's fills and proposals, positions, and orders. Slice 2 (a separate Agent Note) adds a multi-agent desk — analyst, strategist, risk reviewer — that reuses the slice 1 tools unchanged.
+Slice 1 adds a chat-driven trading desk as an opt-in `trading` profile built from six `packages/experimental/` packages. One agent analyzes markets through tools and proposes orders — either the in-app dsh agent or the user's own Claude Code CLI running in the desk's terminal and connected over MCP; the user approves each order on an approval card; the Trading sidebar panel shows live charts, the agent's fills and proposals, positions, and orders. Slice 2 (a separate Agent Note) adds a multi-agent desk — analyst, strategist, risk reviewer — that reuses the slice 1 tools unchanged.
 
 Fixed decisions:
 
@@ -29,9 +29,12 @@ All packages are `@deepseek-ai/dsh-experimental-*`, published by default under `
 | `trading-alpaca` | Alpaca provider for both interfaces | Registers `ctx.marketData` and `ctx.broker`; REST history and order APIs; one shared WebSocket per asset class; keys via `ctx.credentials`; `mode: paper \| live`, default `paper` |
 | `tool-trading` | Model-facing tools and the order executor | `get_quote`, `get_bars`, `get_account`, `get_positions`, `list_orders`, `place_order`, `cancel_order`; risk check, approval, re-check, idempotent submit, journal |
 | `trading-gateway` | Typed remote service for the client | `bars(symbol, tf, before?)`, `streamBars(symbol, tf)`, `streamAccount()`, watchlist get/set, halt/flatten |
+| `trading-mcp` | MCP endpoint for external agents | Streamable-HTTP MCP server on the dsh host exposing the same seven tools through the same order executor; per-session bearer tokens |
 | `ui-trading` | Browser half | Right-sidebar Trading tab; tool views for trading tools in the `tool.call.toolview` slot; Trading settings card |
 
-An opt-in profile patch (`trading`) composes the five packages into the web application and adds a trading section to the system prompt. `dsh web --profile trading` launches the desk; default profiles are unchanged. Tools and the gateway depend only on the `MarketData` and `Broker` interfaces, so a later provider (Binance, IBKR) is a new provider package with no consumer changes. Whether `trading-core` splits into a types package and a risk package follows the role-word naming rules in [adding-a-package](../../../../docs/cookbook/adding-a-package.md); the implementation plan settles it.
+`tool-trading` owns the order executor (validate, snapshot, risk check, approval, re-check, submit, journal) and exposes it as a service that both its own tools and `trading-mcp` call, so no agent has a path to the broker that skips it.
+
+An opt-in profile patch (`trading`) composes the six packages, keeps the web app's user terminal (`terminal-controller`, `ui-sidebar-terminal`), and adds a trading section to the system prompt. `dsh web --profile trading` launches the desk; default profiles are unchanged. Tools and the gateway depend only on the `MarketData` and `Broker` interfaces, so a later provider (Binance, IBKR) is a new provider package with no consumer changes. Whether `trading-core` splits into a types package and a risk package follows the role-word naming rules in [adding-a-package](../../../../docs/cookbook/adding-a-package.md); the implementation plan settles it.
 
 Live mode requires both `mode: live` in the provider config and the launch environment variable `DSH_TRADING_LIVE=1`; either alone refuses to start the provider in live mode. Live mode renders a persistent red LIVE badge in the panel and on every order card.
 
@@ -110,6 +113,18 @@ Tool views: `get_bars` renders a mini candle chart and indicator summary and ope
 | Agent interrupted while approval pending | Request cancelled; nothing submitted |
 | Restart | Broker state is authoritative; positions and orders reload from Alpaca; the journal reconciles against them |
 
+### Claude Code as a trading agent
+
+The user can drive trading from their own Claude Code subscription by running the unmodified `claude` CLI — in a Terminal tab of the desk or any external terminal — with the `trading-mcp` endpoint configured as an MCP server. Claude Code signs in through Anthropic's own flow; the harness never reads, stores, or forwards Claude Code credentials and never sends model requests on the subscription.
+
+- **Endpoint.** `trading-mcp` serves streamable HTTP at `/mcp/trading` on the dsh host. Each token is issued per dsh session from the Trading settings card and binds every call to that session's log and journal. Settings shows a copyable `claude mcp add --transport http dsh-trading <url> --header "Authorization: Bearer <token>"` line including a per-server timeout. When the terminal controller can inject environment into new shells, Trading terminals receive the URL and token automatically; the plan verifies this capability.
+- **Tools.** The same seven tools with the same descriptions and limits. Read-only tools need no approval and can be added to Claude Code's allowed tools.
+- **Approval.** The dsh approval in the Trading panel is the deciding check for MCP orders and cancellations. Approving inside Claude Code alone never places an order, and Claude Code permission bypass modes do not skip the dsh approval. Pending MCP approvals render in a Pending approvals strip at the top of the Trading panel, and the Trading tab shows a badge while the user is in another tab. A pending MCP approval expires after a configurable window (default 10 minutes) and resolves as rejected. Whether MCP approvals reuse `ctx.approval` with a session-scoped request or a trading-owned queue is settled in the implementation plan; either way each request and decision is recorded as a trading session event.
+- **Long waits.** The MCP call blocks until the decision. The server emits MCP progress notifications every 30 seconds so Claude Code's idle timeout for HTTP servers (5 minutes by default) does not abort the wait.
+- **Attribution.** Every card and journal entry names its source: the dsh agent or Claude Code (MCP).
+
+Usage stays interactive: a person drives Claude Code and approves each order. Unattended or scheduled trading on a Claude subscription is out of scope; a later autonomous slice uses API-key authentication.
+
 ## Alternatives considered
 
 ### Why not make trading part of the default product?
@@ -123,6 +138,18 @@ An external plugin keeps the cleanest separation from upstream, but slot registr
 ### Why not the TradingView Advanced Charts library or widget?
 
 Advanced Charts provides drawing tools and many more indicators, but it requires a license application and cannot be redistributed in an open-source repository. The iframe widget uses TradingView's own data, so agents cannot read what the chart shows and the harness cannot draw the agent's orders on it. `lightweight-charts` is Apache-2.0, accepts harness data, and supports markers, price lines, and panes for the overlays.
+
+### Why not route model requests through the user's Claude Pro/Max login?
+
+`llm-pi-ai` can sign in to Anthropic with a Claude Pro/Max OAuth flow supplied by its library. Anthropic's Claude Code legal and compliance documentation does not permit third-party applications to route requests through Free, Pro, or Max plan credentials or to collect or intermediate Claude.ai credentials; products built on Claude use API-key authentication. Running the unmodified Claude Code binary with the user's own subscription is permitted, so the desk exposes tools to that binary instead of consuming its credentials.
+
+### Why not the `subagent-claude-code` backend on the subscription?
+
+That backend runs Claude Code through the Claude Agent SDK, whose guidance is API-key authentication for SDK-built agents, and it runs one-shot without user prompts. It remains available for slice 2 with an API key, not as the subscription path.
+
+### Why not a stdio MCP server?
+
+A stdio server would be launched by Claude Code as a separate process, which needs a package bin or ad-hoc launcher that the application-launch rule forbids, and it would still have to reach the running host's broker connection, risk state, approvals, and journal. Serving MCP from the host over HTTP keeps one executor and one source of state.
 
 ### Why not a multi-agent desk first?
 
@@ -147,7 +174,9 @@ Alpaca covers both asset classes with one paper account and free market data. A 
 - While halted, every `place_order` is denied; the agent has no tool that resumes trading.
 - A simulated network failure during submit never produces a duplicate order.
 - Live mode refuses to start unless both `mode: live` and `DSH_TRADING_LIVE=1` are set.
-- All five packages pass the per-file 100% coverage gate; the profile has a real-composition test; registry contributions have HMR disposal tests; client copy passes `verify-client-ui-i18n`.
+- An unmodified `claude` CLI configured with the `trading-mcp` line from Trading settings can call every trading tool; its `place_order` shows in the Pending approvals strip with source Claude Code (MCP), blocks until decided without hitting Claude Code's idle timeout, and on approval produces the same fill, marker, and journal entry as an in-app order. A request without a valid session token is refused.
+- A Terminal tab is available in the `trading` profile alongside the Trading tab.
+- All six packages pass the per-file 100% coverage gate; the profile has a real-composition test; registry contributions have HMR disposal tests; client copy passes `verify-client-ui-i18n`.
 - A keyless snapshot test replays an analyze → propose → approve → fill session through the trading profile with a fake broker provider.
 - An opt-in e2e test against Alpaca paper places and then cancels or closes a minimal crypto order, and skips without `ALPACA_*` keys.
 
@@ -157,5 +186,7 @@ Alpaca covers both asset classes with one paper account and free market data. A 
 - **Data fidelity.** The free IEX feed differs from the consolidated tape, and free-plan symbol and rate limits cap the watchlist size. The feed is labeled in the UI and configurable.
 - **Credential exposure.** Alpaca keys live in the file-backed credentials store, readable by processes running as the same OS user, including agent shell tools. Paper keys bound the blast radius in slice 1; live keys need a stronger story before live mode ships.
 - **Model overconfidence.** The agent's rationale may sound authoritative while being wrong. The card shows the rationale and the risk checks side by side, and slice 1 makes no claim of investment advice.
+- **Claude subscription terms.** Subscription use is limited to the user driving the unmodified Claude Code CLI; plan limits assume ordinary individual use. The harness must never read Claude Code credentials, and autonomous trading must use an API key. Anthropic may change these terms; the MCP endpoint itself is agent-agnostic and works with any MCP client.
+- **Local endpoint exposure.** The MCP endpoint can place orders, so it accepts only per-session bearer tokens, binds to the host's configured address, and is subject to the same approval and limits as in-app tools.
 - **Upstream churn.** Experimental packages depend on pre-stable harness APIs (`tools/pre-execute`, slots, typert remotes) and will need updates as upstream changes them.
 - **Given up in slice 1:** drawing tools, multi-chart layouts, options, extended-hours trading, a manual order ticket, autonomous or scheduled trading, providers other than Alpaca, and live money.
