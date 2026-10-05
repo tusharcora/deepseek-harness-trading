@@ -47,13 +47,27 @@ describe('submitOrder', () => {
       take_profit: { limit_price: '250' }, stop_loss: { stop_price: '220' } })
   })
 
-  it('returns the existing order for a duplicate client order id, and rethrows when none exists', async () => {
+  it('returns the existing order for a duplicate client order id, and reports an unknown outcome when two lookups find none', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 40010001, message: 'client_order_id must be unique' } }))
     fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: placed }))
     expect((await submitOrder(http, request, timing())).id).toBe('o-1')
     expect(fake.requests[1]?.query.get('client_order_id')).toBe('c-1')
     fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
-    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({ code: 'rejected', brokerCode: 40010001 })
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({
+      code: 'unknown-outcome', message: expect.stringContaining('c-1') as unknown,
+    })
+    expect(lookups()).toBe(3)
+    expect(waits).toEqual([50])
+  })
+
+  it('finds a duplicate client order id on the delayed second lookup', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 40010001, message: 'client_order_id must be unique' } }))
+    let seen = 0
+    fake.on('GET', '/v2/orders:by_client_order_id', () => (++seen < 2
+      ? { status: 404, body: { message: 'order not found' } }
+      : { status: 200, body: placed }))
+    expect((await submitOrder(http, request, timing())).id).toBe('o-1')
+    expect(waits).toEqual([50])
   })
 
   it('finds an order that appears only on the delayed second lookup', async () => {

@@ -107,9 +107,14 @@ export async function submitOrder(http: AlpacaHttp, request: BrokerOrderRequest,
     if (!(error instanceof VenueError)) throw error
     if (error instanceof AcceptedUnreadableError) return confirmAccepted(http, request.clientOrderId, timing)
     if (error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
-      const existing = await lookup(http, request.clientOrderId)
+      // Alpaca says the id exists, so an empty lookup means it is not readable yet, never that nothing was placed.
+      const existing = await confirmTwice(http, request.clientOrderId, timing)
       if (existing !== undefined) return existing
-      throw error
+      throw new VenueError(
+        `Alpaca reports client order id ${request.clientOrderId} as already used but no order with it could be read; `
+        + 'check open orders before proposing again',
+        'unknown-outcome',
+      )
     }
     if (error.code !== 'unavailable') throw error
     const found = await confirmTwice(http, request.clientOrderId, timing)
