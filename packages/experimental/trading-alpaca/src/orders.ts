@@ -10,7 +10,7 @@ import type {
   AccountSnapshot, BrokerOrder, BrokerOrderId, BrokerOrderRequest, ClientOrderId, PositionSnapshot, TradingSymbol,
 } from '@deepseek-ai/dsh-experimental-trading'
 import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
-import type { AlpacaHttp } from './http.ts'
+import { AcceptedUnreadableError, type AlpacaHttp } from './http.ts'
 import { decimalString, mapAccount, mapOrder, mapPosition, pathSymbol } from './map.ts'
 import type { RawRecord } from './types.ts'
 
@@ -55,14 +55,21 @@ function orderBody(request: BrokerOrderRequest): Record<string, unknown> {
  * @param http - REST client.
  * @param id - client order id.
  * @returns the order, or undefined when Alpaca has none.
+ * @throws VenueError `unknown-outcome` when Alpaca answers with an order carrying a different client order id.
  */
 export async function orderByClientId(http: AlpacaHttp, id: ClientOrderId): Promise<BrokerOrder | undefined> {
+  let raw: RawRecord
   try {
-    return mapOrder(await http.request<RawRecord>('trading', 'GET', '/v2/orders:by_client_order_id', { query: { client_order_id: id } }))
+    raw = await http.request<RawRecord>('trading', 'GET', '/v2/orders:by_client_order_id', { query: { client_order_id: id } })
   } catch (error) {
     if (error instanceof VenueError && error.code === 'not-found') return undefined
     throw error
   }
+  const order = mapOrder(raw)
+  if (order.clientOrderId !== id) {
+    throw new VenueError(`Alpaca returned order ${order.id} for client order id ${id}`, 'unknown-outcome')
+  }
+  return order
 }
 
 async function lookup(http: AlpacaHttp, id: ClientOrderId): Promise<BrokerOrder | undefined> {
@@ -98,6 +105,7 @@ export async function submitOrder(http: AlpacaHttp, request: BrokerOrderRequest,
   } catch (error) {
     // A non-VenueError comes from resolving the keys, before anything was sent.
     if (!(error instanceof VenueError)) throw error
+    if (error instanceof AcceptedUnreadableError) return confirmAccepted(http, request.clientOrderId, timing)
     if (error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
       const existing = await lookup(http, request.clientOrderId)
       if (existing !== undefined) return existing
@@ -108,12 +116,14 @@ export async function submitOrder(http: AlpacaHttp, request: BrokerOrderRequest,
     if (found !== undefined) return found
     throw new VenueError('Alpaca is unavailable; the order was not placed', 'unavailable')
   }
-  const accepted = readOwnOrder(raw, request.clientOrderId)
-  if (accepted !== undefined) return accepted
-  // Alpaca answered 2xx, so it accepted something: read the order back instead of trusting the body.
-  const found = await confirmTwice(http, request.clientOrderId, timing)
+  return readOwnOrder(raw, request.clientOrderId) ?? confirmAccepted(http, request.clientOrderId, timing)
+}
+
+/** Alpaca answered 2xx, so it accepted something: read the order back instead of trusting the body. */
+async function confirmAccepted(http: AlpacaHttp, id: ClientOrderId, timing: OrderTiming): Promise<BrokerOrder> {
+  const found = await confirmTwice(http, id, timing)
   if (found !== undefined) return found
-  throw new VenueError(`Alpaca accepted order ${request.clientOrderId} but it could not be read back`, 'unknown-outcome')
+  throw new VenueError(`Alpaca accepted order ${id} but it could not be read back`, 'unknown-outcome')
 }
 
 /** Map a submission response, treating a body that names another client order id as unreadable. */

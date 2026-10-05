@@ -23,6 +23,14 @@ export interface AlpacaHttpOptions {
   readonly sleep?: (ms: number) => Promise<void>
 }
 
+/** Alpaca answered 2xx but the body could not be read; the request may have taken effect. */
+export class AcceptedUnreadableError extends VenueError {
+  /** @param message - what could not be read. */
+  constructor(message: string) {
+    super(message, 'unavailable')
+  }
+}
+
 /** Query string and JSON body for one request. */
 export interface RequestOptions {
   /** Query parameters; `undefined` values are omitted. */
@@ -107,12 +115,13 @@ export class AlpacaHttp {
       try {
         text = await response.text()
       } catch (error) {
-        throw new VenueError(`Alpaca connection dropped while reading the response: ${(error as Error).message}`, 'unavailable')
+        const message = `Alpaca connection dropped while reading the response: ${(error as Error).message}`
+        throw response.ok ? new AcceptedUnreadableError(message) : new VenueError(message, 'unavailable')
       }
       if (response.ok) {
         if (text === '') return undefined as T
         const parsed = parseJson(text)
-        if (parsed === undefined) throw new VenueError('Alpaca returned an unreadable response', 'unavailable')
+        if (parsed === undefined) throw new AcceptedUnreadableError('Alpaca returned an unreadable response')
         return parsed as T
       }
       throw toVenueError(response.status, text === '' ? undefined : parseJson(text) ?? { message: text })

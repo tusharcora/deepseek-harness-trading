@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
-import { AlpacaHttp } from '../src/http.ts'
+import { AcceptedUnreadableError, AlpacaHttp } from '../src/http.ts'
 import { FakeAlpaca } from './fake-alpaca.ts'
 
 let fake: FakeAlpaca
@@ -90,11 +90,21 @@ describe('AlpacaHttp', () => {
     fake.on('POST', '/v2/orders', () => ({ status: 200, rawBody: '<html>proxy page</html>' }))
     await expect(client().request('trading', 'POST', '/v2/orders', { body: {} }))
       .rejects.toMatchObject({ code: 'unavailable', message: 'Alpaca returned an unreadable response' })
+    await expect(client().request('trading', 'POST', '/v2/orders', { body: {} })).rejects.toBeInstanceOf(AcceptedUnreadableError)
   })
 
   it('reports a connection dropped mid-body as unavailable', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 200, body: { id: 'o-1', padding: 'x'.repeat(200) }, truncate: true }))
     await expect(client().request('trading', 'POST', '/v2/orders', { body: {} })).rejects.toMatchObject({ code: 'unavailable' })
+    await expect(client().request('trading', 'POST', '/v2/orders', { body: {} })).rejects.toBeInstanceOf(AcceptedUnreadableError)
+  })
+
+  it('reports a failed response dropped mid-body as plain unavailable, not as accepted', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 500, body: { message: 'boom', padding: 'x'.repeat(200) }, truncate: true }))
+    const error = await client().request('trading', 'POST', '/v2/orders', { body: {} }).catch((e: unknown) => e)
+    expect(error).toMatchObject({ code: 'unavailable' })
+    expect(error).toBeInstanceOf(VenueError)
+    expect(error).not.toBeInstanceOf(AcceptedUnreadableError)
   })
 
   it('waits with a real timer when no sleep is injected', async () => {

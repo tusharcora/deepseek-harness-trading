@@ -3,7 +3,7 @@ import type { BrokerOrderId, BrokerOrderRequest, ClientOrderId } from '@deepseek
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AlpacaHttp } from '../src/http.ts'
 import {
-  account, cancelOrder, closePosition, flatten, openOrders, positions, submitOrder, type OrderTiming,
+  account, cancelOrder, closePosition, flatten, openOrders, orderByClientId, positions, submitOrder, type OrderTiming,
 } from '../src/orders.ts'
 import { FakeAlpaca } from './fake-alpaca.ts'
 
@@ -102,6 +102,21 @@ describe('submitOrder', () => {
     expect(fake.requests.at(-1)?.query.get('client_order_id')).toBe('c-1')
   })
 
+  it('reports an unknown outcome, never not placed, for a 2xx dropped mid-body that no lookup finds', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 200, body: { ...placed, padding: 'x'.repeat(200) }, truncate: true }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({ code: 'unknown-outcome' })
+    expect(lookups()).toBe(2)
+    expect(waits).toEqual([50])
+  })
+
+  it('reports an unknown outcome, never not placed, for an unparseable 2xx that no lookup finds', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 200, rawBody: '<html>' }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({ code: 'unknown-outcome' })
+    expect(lookups()).toBe(2)
+  })
+
   it('reports an unknown outcome when the lookup also fails', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 503, body: { message: 'busy' } }))
     fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 503, body: { message: 'busy' } }))
@@ -119,6 +134,28 @@ describe('submitOrder', () => {
       keys: async () => { throw new Error('vault locked') } })
     await expect(submitOrder(locked, request, timing())).rejects.toThrow('vault locked')
     expect(fake.requests).toHaveLength(0)
+  })
+})
+
+describe('orderByClientId', () => {
+  it('returns undefined when Alpaca has no such order', async () => {
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
+    expect(await orderByClientId(http, clientOrderId)).toBeUndefined()
+    expect(lookups()).toBe(1)
+  })
+
+  it('refuses an order that carries another client order id', async () => {
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: { ...placed, id: 'o-9', client_order_id: 'c-9' } }))
+    await expect(orderByClientId(http, clientOrderId)).rejects.toMatchObject({
+      code: 'unknown-outcome', message: 'Alpaca returned order o-9 for client order id c-1',
+    })
+  })
+
+  it('makes submission report an unknown outcome when the lookup returns another order', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 503, body: { message: 'busy' } }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: { ...placed, id: 'o-9', client_order_id: 'c-9' } }))
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({ code: 'unknown-outcome' })
+    expect(lookups()).toBe(1)
   })
 })
 
