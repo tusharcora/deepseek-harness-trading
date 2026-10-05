@@ -41,7 +41,7 @@ export const tradingSafetyDomainSpec = defineDomain({
 /** Alpaca implementation of the trading venue. */
 export class AlpacaVenue extends TradingVenueGateway {
   static inject = ['storageDomain']
-  static Config: z<Config> = Config
+  static Config: z<Partial<Config>, Config> = Config
 
   private readonly core: VenueCore
   /** Resolved with the Halt-state domain once init opens it; writes wait for it. */

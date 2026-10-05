@@ -38,6 +38,8 @@ kind: "package-group"
 | [`browser-use-runtime`](browser-use-runtime/README.zh.md) | 实验性提供方共享的 Session 浏览器资源 | — |
 | [`inspector`](inspector/README.zh.md) | 用于 Host 调试、Client Runtime 检查、网络采集与 Cordis 树的跨 realm CDP hub | `ctx.inspector` |
 | [`trading`](trading/README.zh.md) | 浏览器安全的交易领域库：标的、技术指标、实时 K 线、订单校验、风险检查与价格上限 | 库——无 ctx key |
+| [`trading-alpaca`](trading-alpaca/README.md) | 交易场所的 Alpaca 提供方：模拟盘与实盘交易、账户安全、订单更新 | 提供 `ctx.tradingVenue` |
+| [`trading-venue`](trading-venue/README.md) | 交易场所的 Service Definition | `ctx.tradingVenue` |
 | [`tool-agent-team`](tool-agent-team/README.zh.md) | 让模型创建、发消息与协调 teammate 的九个工具 | 按作用域注册工具到 `ctx.tools` |
 | [`webworker-packer`](webworker-packer/README.zh.md) | 构建浏览器 worker 预览所消费的 gzip 压缩虚拟文件系统（VFS）镜像 | 库与 CLI（命令行界面），不使用 ctx key |
 | [`webworker-runtime`](webworker-runtime/README.zh.md) | 在专用浏览器 worker 中运行 harness 插件树 | 库与 worker 入口，不使用 ctx key |

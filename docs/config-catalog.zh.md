@@ -816,6 +816,50 @@ export interface Config {
 
 来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-experimental-trading-alpaca"></a>
+
+## `@deepseek-ai/dsh-experimental-trading-alpaca`
+
+需要：`storageDomain`
+
+```ts config-catalog
+/** Alpaca provider configuration. */
+export interface Config {
+  /** Paper or live account; live also needs `DSH_TRADING_LIVE=1` at launch. */
+  mode: 'paper' | 'live'
+  /** Credential name holding the Alpaca API key id. */
+  apiKeyEnv: string
+  /** Credential name holding the Alpaca secret key. */
+  secretKeyEnv: string
+  /** Equity data feed; the free plan serves only `iex`. */
+  feed: 'iex' | 'sip'
+  /** Interval between account-configuration drift checks, milliseconds. */
+  driftCheckMs: number
+  /** Per-request timeout for Alpaca REST calls, milliseconds. */
+  requestTimeoutMs: number
+  /** Waits before retrying a rate-limited read; one retry per entry. */
+  rateLimitRetryMs: number[]
+  /** Waits before trade-stream reconnect attempts; the last entry repeats. */
+  streamBackoffMs: number[]
+  /** Waits before retrying an unconfirmed broker suspension during Halt; one retry per entry. */
+  suspendRetryMs: number[]
+  /** Wait before the second confirming lookup after an order submission failed in transit, milliseconds. */
+  lookupConfirmMs: number
+  /** Wait between checks that a symbol's cancelled orders are gone before closing its position, milliseconds. */
+  closeSettleMs: number
+  /** Maximum such checks before closing anyway. */
+  closeSettleChecks: number
+  /** Trading API base URL; empty selects the paper or live host for `mode`. */
+  tradingUrl: string
+  /** Market data API base URL. */
+  dataUrl: string
+  /** Trade-updates stream URL; empty selects the paper or live host for `mode`. */
+  tradeStreamUrl: string
+}
+```
+
+来源：[`packages/experimental/trading-alpaca/src/config.ts:9`](../packages/experimental/trading-alpaca/src/config.ts)
+
 <a id="deepseek-aidsh-file-reference-local"></a>
 
 ## `@deepseek-ai/dsh-file-reference-local`
@@ -3690,6 +3734,7 @@ export interface Config {
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
 - `@deepseek-ai/dsh-credentials` — 抽象 `Credentials`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-trading-venue` — 抽象 `TradingVenueGateway`（[`packages/experimental/trading-venue/src/index.ts`](../packages/experimental/trading-venue/src/index.ts)）
 - `@deepseek-ai/dsh-file-reference` — 抽象 `FileReferenceService`（[`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts)）
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）

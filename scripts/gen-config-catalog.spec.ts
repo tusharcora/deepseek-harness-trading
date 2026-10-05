@@ -79,6 +79,43 @@ describe('shared config schema catalog', () => {
     expect(new Set(provider?.schemaKeys)).toEqual(new Set(['mode', 'headless', 'endpoint']))
   })
 
+  it('follows a package-local schema import from a sibling source file', () => {
+    const { root, write } = fixture()
+    write('packages/test/provider/src/config.ts', sharedSchema)
+    write('packages/test/provider/src/index.ts', `
+import { Shared, type BrowserConfig } from './config.ts'
+export type Config = BrowserConfig
+export const Config = Shared
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    const provider = collectConfigCatalog(root).find(entry => entry.pkg === '@test/provider')
+    expect(new Set(provider?.schemaKeys)).toEqual(new Set(['mode', 'headless', 'endpoint']))
+  })
+
+  it('rejects a package-local schema import without the explicit .ts extension', () => {
+    const { root, write } = fixture()
+    write('packages/test/provider/src/config.ts', sharedSchema)
+    write('packages/test/provider/src/index.ts', `
+import { Shared, type BrowserConfig } from './config'
+export type Config = BrowserConfig
+export const Config = Shared
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    expect(() => collectConfigCatalog(root)).toThrow("schema import './config' lacks the explicit .ts extension")
+  })
+
+  it('rejects a package-local schema import outside the entry directory', () => {
+    const { root, write } = fixture()
+    write('packages/test/provider/config.ts', sharedSchema)
+    write('packages/test/provider/src/index.ts', `
+import { Shared, type BrowserConfig } from '../config.ts'
+export type Config = BrowserConfig
+export const Config = Shared
+export function apply(ctx: unknown, config: Config): void {}
+`)
+    expect(() => collectConfigCatalog(root)).toThrow("schema import '../config.ts' must name a file beside")
+  })
+
   it('rejects type-only imports used as runtime schemas', () => {
     const { root, write } = fixture()
     write('packages/test/provider/src/index.ts', `

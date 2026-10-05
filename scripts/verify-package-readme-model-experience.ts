@@ -32,6 +32,8 @@ interface SentenceContract {
 const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/core/scope': 'The package is a model-agnostic registration and lifecycle primitive; model-facing consumers own any context selection.',
   'packages/experimental/trading': 'The package only computes market values and order decisions; tool-trading owns every model-facing rendering.',
+  'packages/experimental/trading-alpaca': 'The package only talks to Alpaca; tool-trading owns every model-facing rendering.',
+  'packages/experimental/trading-venue': 'The package only defines the venue service contract; tool-trading owns every model-facing rendering.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',

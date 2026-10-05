@@ -800,6 +800,19 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TerminalAttachmentId: 'Browser terminal input ownership is owned by packages/api/terminal-controller/README.md',
   TerminalFrame: 'Browser terminal stream frames are owned by packages/api/terminal-controller/README.md',
   WebTerminalId: 'Browser terminal identity is owned by packages/api/terminal-controller/README.md',
+  AccountSnapshot: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  Asset: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  Bar: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  BarQuery: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  BrokerOrder: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  BrokerOrderId: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  BrokerOrderRequest: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  OrderStreamEvent: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  PositionSnapshot: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  Quote: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  Timeframe: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  TradingSymbol: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  VenueStatus: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

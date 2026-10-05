@@ -40,7 +40,7 @@ export interface Config {
 }
 
 /** Validated configuration schema. */
-export const Config: z<Config> = z.object({
+export const Config: z<Partial<Config>, Config> = z.object({
   mode: z.union(['paper', 'live'] as const).default('paper'),
   apiKeyEnv: z.string().role('credential-ref').default('ALPACA_API_KEY'),
   secretKeyEnv: z.string().role('credential-ref').default('ALPACA_SECRET_KEY'),

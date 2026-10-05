@@ -273,6 +273,15 @@ function schemaConst(ctx: FileCtx, name: string, exported: boolean): ts.Expressi
   return null
 }
 
+/** Resolve a package-local relative schema import, which must name a sibling `.ts` source file explicitly. */
+function loadPackageLocalSource(world: World, from: FileCtx, specifier: string): FileCtx {
+  if (!specifier.endsWith('.ts')) throw new Error(`schema import '${specifier}' lacks the explicit .ts extension`)
+  const abs = resolve(dirname(from.abs), specifier)
+  if (dirname(abs) !== dirname(from.abs)) throw new Error(`schema import '${specifier}' must name a file beside ${from.rel}`)
+  const rel = from.rel.slice(0, from.rel.lastIndexOf('/') + 1) + specifier.replace(/^\.\//, '')
+  return loadFile(abs, rel, world.cache)
+}
+
 /** Follow only const identities and named value imports; never execute schema factories. */
 function schemaAlias(world: World, ctx: FileCtx, name: string): { ctx: FileCtx; expr: ts.Expression } {
   const local = schemaConst(ctx, name, false)
@@ -281,7 +290,9 @@ function schemaAlias(world: World, ctx: FileCtx, name: string): { ctx: FileCtx; 
   if (imported === undefined || imported.typeOnly || imported.imported === '*' || imported.imported === 'default') {
     throw new Error(`schema alias '${name}' must name a const or named value import`)
   }
-  const target = loadWorkspaceSource(world, ctx, imported.specifier)
+  const target = imported.specifier.startsWith('.')
+    ? loadPackageLocalSource(world, ctx, imported.specifier)
+    : loadWorkspaceSource(world, ctx, imported.specifier)
   const expr = schemaConst(target, imported.imported, true)
   if (expr === null) throw new Error(`schema import '${imported.specifier}' has no exported const '${imported.imported}'`)
   return { ctx: target, expr }

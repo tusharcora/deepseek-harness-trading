@@ -12,7 +12,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import type { BrokerOrderRequest, ClientOrderId, OrderStreamEvent, VenueStatus } from '@deepseek-ai/dsh-experimental-trading'
+import type { BrokerOrderId, BrokerOrderRequest, ClientOrderId, OrderStreamEvent, VenueStatus } from '@deepseek-ai/dsh-experimental-trading'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -171,7 +171,7 @@ describe('trading-alpaca real composition', () => {
     expect((await venue.latestQuote(aapl)).ask).toBe(2)
     expect(await venue.bars(aapl, '1D', { limit: 5 })).toEqual([])
     expect((await venue.submitOrder(request)).id).toBe('o-1')
-    await venue.cancelOrder(brandString('o-1'))
+    await venue.cancelOrder(brandString<BrokerOrderId>('o-1'))
     expect((await venue.closePosition(request.symbol)).side).toBe('sell')
     expect(await venue.flatten()).toEqual([])
 

@@ -620,6 +620,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, continuable-child lifecycle, and generated Team Remote methods; tool-agent-team contributes model controls and client-ui-agent-team mounts the browser contribution.',
   },
   {
+    key: 'tradingVenue',
+    pkg: 'experimental-trading-venue',
+    title: 'Trading venue',
+    mode: 'seam',
+    implementations: ['experimental-trading-alpaca'],
+    note: 'Account reads, market data, order submission, Halt, and order updates for the trading desk; the Alpaca provider owns broker access and account safety.',
+  },
+  {
     key: 'inspector',
     pkg: 'inspector',
     title: 'Cross-realm runtime inspection',

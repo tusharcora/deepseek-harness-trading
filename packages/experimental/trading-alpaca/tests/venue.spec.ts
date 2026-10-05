@@ -1,5 +1,5 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { BrokerOrderRequest, ClientOrderId, OrderStreamEvent, VenueStatus } from '@deepseek-ai/dsh-experimental-trading'
+import type { BrokerOrderId, BrokerOrderRequest, ClientOrderId, OrderStreamEvent, VenueStatus } from '@deepseek-ai/dsh-experimental-trading'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AlpacaHttp } from '../src/http.ts'
 import { INITIAL_SAFETY_STATE, type SafetyState, type SafetyStateStore } from '../src/safety.ts'
@@ -298,7 +298,7 @@ describe('VenueCore reads', () => {
     expect((await venue.latestQuote(aapl)).ask).toBe(2)
     expect(await venue.bars(aapl, '1D', { limit: 5 })).toEqual([])
     expect((await venue.asset(aapl)).tradable).toBe(true)
-    await venue.cancelOrder(brandString('o-1'))
+    await venue.cancelOrder(brandString<BrokerOrderId>('o-1'))
     expect(fake.requests.find(r => r.path === '/v2/stocks/bars')?.query.get('end')).toBe('2026-10-05T00:00:00.000Z')
   })
 })
