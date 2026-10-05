@@ -139,6 +139,8 @@ export interface PositionSnapshot {
   readonly symbol: TradingSymbol
   /** Signed quantity. */
   readonly qty: number
+  /** Signed quantity the broker will let you sell or cover now; can lag behind `qty` right after a fill. */
+  readonly qtyAvailable: number
   /** Average entry price. */
   readonly avgEntryPrice: number
   /** Latest price the broker used for valuation. */

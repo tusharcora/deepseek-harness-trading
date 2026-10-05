@@ -152,13 +152,15 @@ export function mapAccount(raw: RawRecord): AccountSnapshot {
 /**
  * Map one position.
  * @param raw - position JSON.
- * @returns the position with signed quantity.
+ * @returns the position with signed quantity and signed sellable quantity (`qty_available`).
  */
 export function mapPosition(raw: RawRecord): PositionSnapshot {
   const qty = decimal(raw.qty, 'qty')
+  const qtyAvailable = decimal(raw.qty_available, 'qty_available')
   return {
     symbol: venueSymbol(text(raw.symbol, 'symbol'), text(raw.asset_class, 'asset_class')),
     qty: positionSign(raw.side, qty) * Math.abs(qty),
+    qtyAvailable: positionSign(raw.side, qtyAvailable) * Math.abs(qtyAvailable),
     avgEntryPrice: decimal(raw.avg_entry_price, 'avg_entry_price'),
     currentPrice: decimal(raw.current_price, 'current_price'),
     marketValue: decimal(raw.market_value, 'market_value'),
@@ -200,9 +202,10 @@ export function mapOrder(raw: RawRecord): BrokerOrder {
 /**
  * Map GET /v2/assets/{symbol}.
  * @param raw - asset JSON.
- * @returns broker facts for validation; equities use a one-cent tick.
+ * @param cryptoMinNotional - minimum crypto order value in dollars, which Alpaca enforces but does not publish on the asset.
+ * @returns broker facts for validation; equities use a one-cent tick and carry no minimum value.
  */
-export function mapAsset(raw: RawRecord): Asset {
+export function mapAsset(raw: RawRecord, cryptoMinNotional: number): Asset {
   const symbol = venueSymbol(text(raw.symbol, 'symbol'), text(raw.class, 'class'))
   const minOrderSize = optionalDecimal(raw.min_order_size, 'min_order_size')
   return {
@@ -210,6 +213,7 @@ export function mapAsset(raw: RawRecord): Asset {
     tradable: raw.tradable === true && text(raw.status, 'status') === 'active',
     fractionable: raw.fractionable === true,
     ...minOrderSize === undefined ? {} : { minOrderSize },
+    ...symbol.assetClass === 'crypto' ? { minNotional: cryptoMinNotional } : {},
     priceIncrement: symbol.assetClass === 'crypto' ? decimal(raw.price_increment, 'price_increment') : 0.01,
   }
 }

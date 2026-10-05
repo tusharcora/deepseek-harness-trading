@@ -62,7 +62,7 @@ describe('venueSymbol', () => {
 })
 
 describe('required record fields', () => {
-  const position = { symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2', avg_entry_price: '228.10',
+  const position = { symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2', qty_available: '2', avg_entry_price: '228.10',
     current_price: '231.42', market_value: '462.84', unrealized_pl: '6.64' }
   const malformed = (field: string): VenueError => new VenueError(`Alpaca returned a malformed ${field}`, 'unavailable')
   const without = (record: Record<string, unknown>, field: string): Record<string, unknown> =>
@@ -82,12 +82,15 @@ describe('required record fields', () => {
     expect(() => mapPosition(without(position, 'asset_class'))).toThrow(malformed('asset_class'))
     expect(() => mapPosition({ ...position, side: 'shrt' })).toThrow(malformed('side'))
     expect(() => mapPosition({ ...position, qty: '-1' })).toThrow(malformed('qty'))
+    expect(() => mapPosition(without(position, 'qty_available'))).toThrow(malformed('qty_available'))
+    expect(() => mapPosition({ ...position, qty_available: 'x' })).toThrow(malformed('qty_available'))
+    expect(() => mapPosition({ ...position, qty_available: '-1' })).toThrow(malformed('qty'))
   })
 
   it('refuses assets missing a symbol, class, or status, and rejects unsupported classes', () => {
     const raw = { symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true }
-    for (const field of ['symbol', 'class', 'status']) expect(() => mapAsset(without(raw, field))).toThrow(malformed(field))
-    expect(() => mapAsset({ ...raw, class: 'us_option' })).toThrow(expect.objectContaining({ code: 'rejected' }) as Error)
+    for (const field of ['symbol', 'class', 'status']) expect(() => mapAsset(without(raw, field), 10)).toThrow(malformed(field))
+    expect(() => mapAsset({ ...raw, class: 'us_option' }, 10)).toThrow(expect.objectContaining({ code: 'rejected' }) as Error)
   })
 })
 
@@ -103,13 +106,17 @@ describe('record mapping', () => {
     expect(() => mapAccount({ ...raw, last_equity: '' })).toThrow('Alpaca returned a malformed last_equity')
   })
 
-  it('maps positions with signed quantity', () => {
-    const raw = { symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2', avg_entry_price: '228.10',
+  it('maps positions with signed quantity and signed sellable quantity', () => {
+    const raw = { symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2', qty_available: '1.5', avg_entry_price: '228.10',
       current_price: '231.42', market_value: '462.84', unrealized_pl: '6.64' }
-    expect(mapPosition(raw)).toEqual({ symbol: { assetClass: 'equity', ticker: 'AAPL' }, qty: 2, avgEntryPrice: 228.1,
+    expect(mapPosition(raw)).toEqual({ symbol: { assetClass: 'equity', ticker: 'AAPL' }, qty: 2, qtyAvailable: 1.5, avgEntryPrice: 228.1,
       currentPrice: 231.42, marketValue: 462.84, unrealizedPl: 6.64 })
     expect(mapPosition({ ...raw, side: 'short', qty: '-3' }).qty).toBe(-3)
     expect(mapPosition({ ...raw, side: 'short', qty: '3' }).qty).toBe(-3)
+    expect(mapPosition({ ...raw, side: 'short', qty: '-3', qty_available: '-2' }).qtyAvailable).toBe(-2)
+    expect(mapPosition({ ...raw, side: 'short', qty: '-3', qty_available: '2' }).qtyAvailable).toBe(-2)
+    // Right after a fill Alpaca can report the position before its coins are sellable.
+    expect(mapPosition({ ...raw, qty_available: '0' }).qtyAvailable).toBe(0)
   })
 
   it('maps orders, folding broker states into the desk lifecycle', () => {
@@ -130,14 +137,15 @@ describe('record mapping', () => {
     expect(mapOrder({ ...order, type: 'market', limit_price: null })).not.toHaveProperty('limitPrice')
   })
 
-  it('maps assets, using a cent tick for equities and the broker tick for crypto', () => {
-    expect(mapAsset({ symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true }))
+  it('maps assets, using a cent tick for equities and the broker tick and given minimum value for crypto', () => {
+    expect(mapAsset({ symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true }, 10))
       .toEqual({ symbol: { assetClass: 'equity', ticker: 'AAPL' }, tradable: true, fractionable: true, priceIncrement: 0.01 })
     expect(mapAsset({ symbol: 'BTC/USD', class: 'crypto', status: 'active', tradable: true, fractionable: true,
-      min_order_size: '0.0001', price_increment: '1' }))
+      min_order_size: '0.0001', price_increment: '1' }, 10))
       .toEqual({ symbol: { assetClass: 'crypto', ticker: 'BTC/USD' }, tradable: true, fractionable: true, minOrderSize: 0.0001,
-        priceIncrement: 1 })
-    expect(mapAsset({ symbol: 'XYZ', class: 'us_equity', status: 'inactive', tradable: true, fractionable: false }).tradable).toBe(false)
+        minNotional: 10, priceIncrement: 1 })
+    expect(mapAsset({ symbol: 'XYZ', class: 'us_equity', status: 'inactive', tradable: true, fractionable: false }, 10).tradable)
+      .toBe(false)
   })
 
   it('maps bars and quotes from market-data JSON', () => {

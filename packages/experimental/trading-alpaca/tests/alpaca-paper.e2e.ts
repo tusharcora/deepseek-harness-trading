@@ -28,7 +28,7 @@ const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
 function paperVenue(): VenueCore {
   const http = new AlpacaHttp({ tradingUrl: 'https://paper-api.alpaca.markets', dataUrl: 'https://data.alpaca.markets',
     timeoutMs: 15_000, retryDelaysMs: [1_000, 2_000], keys: async () => ({ keyId: keyId ?? '', secret: secret ?? '' }) })
-  return new VenueCore({ http, feed: 'iex', now: () => Date.now(), keysPresent: async () => true,
+  return new VenueCore({ http, feed: 'iex', cryptoMinNotional: 10, now: () => Date.now(), keysPresent: async () => true,
     timing: { confirmDelayMs: 2_000, settleDelayMs: 500, settleChecks: 10, sleep },
     safetyTiming: { suspendRetryMs: [500, 1_000], sleep },
     store: orderedStore(INITIAL_SAFETY_STATE, async () => {}),

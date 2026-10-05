@@ -29,6 +29,8 @@ export interface VenueCoreDeps {
   readonly http: AlpacaHttp
   /** Equity data feed. */
   readonly feed: 'iex' | 'sip'
+  /** Minimum crypto order value in dollars, reported as each crypto asset's `minNotional`. */
+  readonly cryptoMinNotional: number
   /** Current time, UTC epoch milliseconds. */
   readonly now: () => number
   /** Submission confirmation and position-close waits. */
@@ -121,7 +123,7 @@ export class VenueCore {
    */
   async asset(symbol: TradingSymbol): Promise<Asset> {
     await this.readable()
-    return asset(this.deps.http, symbol)
+    return asset(this.deps.http, symbol, this.deps.cryptoMinNotional)
   }
 
   /**

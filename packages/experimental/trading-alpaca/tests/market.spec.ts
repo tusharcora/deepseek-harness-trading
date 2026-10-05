@@ -81,6 +81,6 @@ describe('marketOpen and asset', () => {
   it('reads a crypto asset by its joined symbol', async () => {
     fake.on('GET', '/v2/assets/BTCUSD', () => ({ status: 200, body: { symbol: 'BTC/USD', class: 'crypto', status: 'active',
       tradable: true, fractionable: true, price_increment: '1' } }))
-    expect((await asset(http, btc)).priceIncrement).toBe(1)
+    expect(await asset(http, btc, 12)).toMatchObject({ priceIncrement: 1, minNotional: 12 })
   })
 })

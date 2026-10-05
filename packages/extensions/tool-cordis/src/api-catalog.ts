@@ -5057,7 +5057,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PositionSnapshot',
-    declaration: 'export interface PositionSnapshot {\n    readonly symbol: TradingSymbol;\n    readonly qty: number;\n    readonly avgEntryPrice: number;\n    readonly currentPrice: number;\n    readonly marketValue: number;\n    readonly unrealizedPl: number;\n}',
+    declaration: 'export interface PositionSnapshot {\n    readonly symbol: TradingSymbol;\n    readonly qty: number;\n    readonly qtyAvailable: number;\n    readonly avgEntryPrice: number;\n    readonly currentPrice: number;\n    readonly marketValue: number;\n    readonly unrealizedPl: number;\n}',
   },
   {
     name: 'PostToolDecision',

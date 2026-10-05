@@ -847,6 +847,8 @@ export interface Config {
   closeSettleMs: number
   /** Maximum such checks before closing anyway. */
   closeSettleChecks: number
+  /** Alpaca's minimum crypto order value in dollars; Alpaca rejects smaller crypto orders but does not publish this on the asset. */
+  cryptoMinNotional: number
   /** Trading API base URL; empty selects the paper or live host for `mode`. */
   tradingUrl: string
   /** Market data API base URL. */

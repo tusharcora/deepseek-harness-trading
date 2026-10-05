@@ -74,6 +74,7 @@ export class AlpacaVenue extends TradingVenueGateway {
       http: new AlpacaHttp({ tradingUrl: endpoints.tradingUrl, dataUrl: endpoints.dataUrl, timeoutMs: config.requestTimeoutMs,
         retryDelaysMs: config.rateLimitRetryMs, keys: requireKeys }),
       feed: config.feed,
+      cryptoMinNotional: config.cryptoMinNotional,
       now: Date.now,
       timing: {
         confirmDelayMs: config.lookupConfirmMs, settleDelayMs: config.closeSettleMs, settleChecks: config.closeSettleChecks, sleep,

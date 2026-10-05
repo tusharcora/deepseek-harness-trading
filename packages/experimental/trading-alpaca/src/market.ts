@@ -86,8 +86,10 @@ export async function marketOpen(http: AlpacaHttp, symbol: TradingSymbol): Promi
  * Read broker facts for one instrument.
  * @param http - REST client.
  * @param symbol - instrument.
+ * @param cryptoMinNotional - minimum crypto order value in dollars, set as a crypto asset's `minNotional`.
  * @returns the asset.
  */
-export async function asset(http: AlpacaHttp, symbol: TradingSymbol): Promise<Asset> {
-  return mapAsset(await http.request<RawRecord>('trading', 'GET', `/v2/assets/${encodeURIComponent(pathSymbol(symbol))}`))
+export async function asset(http: AlpacaHttp, symbol: TradingSymbol, cryptoMinNotional: number): Promise<Asset> {
+  const raw = await http.request<RawRecord>('trading', 'GET', `/v2/assets/${encodeURIComponent(pathSymbol(symbol))}`)
+  return mapAsset(raw, cryptoMinNotional)
 }

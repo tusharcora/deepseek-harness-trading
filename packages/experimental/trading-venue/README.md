@@ -51,9 +51,9 @@ Every method that reaches the broker resolves the API keys at call time and thro
 |---|---|
 | `status()` | Current readiness: `unconfigured` (keys missing or setup not yet completed), `ready`, `halted`, or `blocked` (the account cannot be made safe, or the broker refused the safety settings). |
 | `account()` | Equity, cash, last equity, buying power, and whether trading is blocked at the broker. |
-| `positions()` | Every open position. |
+| `positions()` | Every open position, with its signed `qty` and its signed `qtyAvailable`, the quantity the broker lets you sell or cover now. `qtyAvailable` can lag behind `qty` right after a fill, so a consumer that sells or closes part of a position sizes the order from `qtyAvailable`. |
 | `openOrders()` | Every order the broker still works. |
-| `asset(symbol)` | Tradability, fractional support, minimum size, and price tick for one instrument. |
+| `asset(symbol)` | Tradability, fractional support, minimum size, minimum order value in dollars when the broker enforces one (`minNotional`), and price tick for one instrument. |
 | `marketOpen(symbol)` | Whether the instrument's market is open now; always true for crypto. |
 | `latestQuote(symbol)` | Best bid, best ask, and quote time. |
 | `bars(symbol, timeframe, query)` | At most `query.limit` bars, oldest first. |

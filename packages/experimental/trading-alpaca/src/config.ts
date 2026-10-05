@@ -31,6 +31,8 @@ export interface Config {
   closeSettleMs: number
   /** Maximum such checks before closing anyway. */
   closeSettleChecks: number
+  /** Alpaca's minimum crypto order value in dollars; Alpaca rejects smaller crypto orders but does not publish this on the asset. */
+  cryptoMinNotional: number
   /** Trading API base URL; empty selects the paper or live host for `mode`. */
   tradingUrl: string
   /** Market data API base URL. */
@@ -53,6 +55,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
   lookupConfirmMs: z.number().min(0).default(2_000),
   closeSettleMs: z.number().min(0).default(500),
   closeSettleChecks: z.number().min(0).default(10),
+  cryptoMinNotional: z.number().min(0).default(10),
   tradingUrl: z.string().default(''),
   dataUrl: z.string().default('https://data.alpaca.markets'),
   tradeStreamUrl: z.string().default(''),

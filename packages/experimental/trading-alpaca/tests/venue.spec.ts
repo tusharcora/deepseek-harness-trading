@@ -32,7 +32,7 @@ function core(
   const stoppers: (() => void)[] = []
   const http = new AlpacaHttp({ tradingUrl: fake.url, dataUrl: fake.url, timeoutMs: 2_000, retryDelaysMs: [], keys })
   const venue = new VenueCore({
-    http, feed: 'iex', now: () => Date.UTC(2026, 9, 5),
+    http, feed: 'iex', cryptoMinNotional: 10, now: () => Date.UTC(2026, 9, 5),
     timing: { confirmDelayMs: 1, settleDelayMs: 1, settleChecks: 2, sleep: async () => {} },
     safetyTiming: { suspendRetryMs: [1], sleep: async () => {} },
     keysPresent: async () => keysPresent,
@@ -418,6 +418,8 @@ describe('VenueCore reads', () => {
     fake.on('GET', '/v2/stocks/quotes/latest', () => ({ status: 200, body: { quotes: { AAPL: { t: '2026-10-05T14:00:00Z', bp: 1, ap: 2 } } } }))
     fake.on('GET', '/v2/stocks/bars', () => ({ status: 200, body: { bars: {}, next_page_token: null } }))
     fake.on('GET', '/v2/assets/AAPL', () => ({ status: 200, body: { symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true } }))
+    fake.on('GET', '/v2/assets/BTCUSD', () => ({ status: 200, body: { symbol: 'BTC/USD', class: 'crypto', status: 'active',
+      tradable: true, fractionable: true, price_increment: '0.01' } }))
     fake.on('DELETE', '/v2/orders/o-1', () => ({ status: 204 }))
     const { venue } = core()
     const aapl = { assetClass: 'equity', ticker: 'AAPL' } as const
@@ -427,6 +429,7 @@ describe('VenueCore reads', () => {
     expect((await venue.latestQuote(aapl)).ask).toBe(2)
     expect(await venue.bars(aapl, '1D', { limit: 5 })).toEqual([])
     expect((await venue.asset(aapl)).tradable).toBe(true)
+    expect((await venue.asset(request.symbol)).minNotional).toBe(10)
     await venue.cancelOrder(brandString<BrokerOrderId>('o-1'))
     expect(fake.requests.find(r => r.path === '/v2/stocks/bars')?.query.get('end')).toBe('2026-10-05T00:00:00.000Z')
   })

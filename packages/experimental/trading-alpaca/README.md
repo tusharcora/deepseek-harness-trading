@@ -55,6 +55,7 @@ The plugin injects `storageDomain`. Consumers read `ctx.tradingVenue` and depend
 | `lookupConfirmMs` | `2000` | Wait before the second confirming lookup after a submission failed in transit or hit a used client order id. |
 | `closeSettleMs` | `500` | Wait between checks that a symbol's cancelled orders are gone before closing its position. |
 | `closeSettleChecks` | `10` | Maximum such checks before closing anyway. |
+| `cryptoMinNotional` | `10` | Alpaca's minimum crypto order value in dollars, reported as every crypto asset's `minNotional`; Alpaca rejects smaller crypto orders but does not publish the minimum on the asset. Minimum 0. Equities carry no minimum value. |
 | `tradingUrl` | `''` | Trading API base URL; empty selects `https://paper-api.alpaca.markets` or `https://api.alpaca.markets` for `mode`. |
 | `dataUrl` | `https://data.alpaca.markets` | Market data API base URL. |
 | `tradeStreamUrl` | `''` | Trade-updates stream URL; empty selects `wss://<trading host>/stream` for `mode`. |
@@ -101,6 +102,8 @@ Numbers are sent as plain decimal strings, never in exponent notation, and every
 - A lookup that fails, or returns an order with a different client order id, throws `unknown-outcome`.
 
 ### Closing positions
+
+`positions()` reports Alpaca's `qty_available` as `qtyAvailable`, signed like `qty`. Right after a crypto buy fills, Alpaca reports the position with `qty_available` of 0 for a moment and rejects a sell for more than it, so a partial sell or cover is sized from `qtyAvailable`.
 
 `closePosition(symbol)` cancels the symbol's resting orders, which hold the shares (a per-order cancel failure is tolerated), checks up to `closeSettleChecks` times, `closeSettleMs` apart, that they are gone, then closes the position at market. The resting orders are cancelled even when Alpaca then reports no position and `closePosition` throws `not-found`. `flatten()` cancels every order and closes every position in one request; when any position fails, it throws `rejected` naming every failed instrument with its HTTP status.
 
@@ -160,6 +163,7 @@ The `trading_alpaca_safety` domain holds one global record: `halted`, `haltReaso
 ## Known Limitations and Deferred Work
 
 - **One-cent tick for equities** — `asset()` reports a 0.01 price increment for every equity, including sub-dollar equities that Alpaca allows to trade in finer increments.
+- **The crypto minimum value is configured, not read** — Alpaca enforces a minimum crypto order value (currently $10) that `GET /v2/assets` does not publish, so `cryptoMinNotional` carries it; a change at Alpaca needs a config change. Validation checks it only for notional and priced orders; Alpaca rejects a quantity-based crypto market order below it.
 - **No market-data WebSocket** — live quotes and trades arrive with the Trading panel; this package serves REST market data only.
 - **Account settings are bounded, not locked** — an agent holding the keys can change `no_shorting`, `max_margin_multiplier`, or `suspend_trade`; the drift check detects the change within one `driftCheckMs` and halts, but cannot prevent it.
 - **Keys added after startup apply on the next venue call** — the panel shows `unconfigured` until something calls the venue or a credentials provider starts.

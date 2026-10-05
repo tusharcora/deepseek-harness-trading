@@ -7,7 +7,7 @@ describe('Config', () => {
       mode: 'paper', apiKeyEnv: 'ALPACA_API_KEY', secretKeyEnv: 'ALPACA_SECRET_KEY', feed: 'iex',
       driftCheckMs: 60_000, requestTimeoutMs: 15_000, rateLimitRetryMs: [1_000, 2_000, 4_000],
       streamBackoffMs: [1_000, 2_000, 5_000, 10_000, 30_000], suspendRetryMs: [500, 1_000, 2_000],
-      lookupConfirmMs: 2_000, closeSettleMs: 500, closeSettleChecks: 10,
+      lookupConfirmMs: 2_000, closeSettleMs: 500, closeSettleChecks: 10, cryptoMinNotional: 10,
       tradingUrl: '', dataUrl: 'https://data.alpaca.markets', tradeStreamUrl: '',
     })
   })

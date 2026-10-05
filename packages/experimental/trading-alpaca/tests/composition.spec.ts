@@ -152,7 +152,8 @@ describe('trading-alpaca real composition', () => {
   it('applies the safety settings, serves every operation, and keeps a Halt across disposal and reboot', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 200, body: order }))
     fake.on('GET', '/v2/orders', () => ({ status: 200, body: [] }))
-    fake.on('GET', '/v2/positions', () => ({ status: 200, body: [] }))
+    fake.on('GET', '/v2/positions', () => ({ status: 200, body: [{ symbol: 'BTCUSD', asset_class: 'crypto', side: 'long',
+      qty: '0.0002', qty_available: '0', avg_entry_price: '60000', current_price: '60000', market_value: '12', unrealized_pl: '0' }] }))
     fake.on('DELETE', '/v2/positions', () => ({ status: 207, body: [] }))
     fake.on('DELETE', '/v2/positions/BTCUSD', () => ({ status: 200, body: { ...order, side: 'sell' } }))
     fake.on('DELETE', '/v2/orders/o-1', () => ({ status: 204 }))
@@ -161,6 +162,8 @@ describe('trading-alpaca real composition', () => {
     fake.on('GET', '/v2/stocks/bars', () => ({ status: 200, body: { bars: {}, next_page_token: null } }))
     fake.on('GET', '/v2/assets/AAPL', () => ({ status: 200,
       body: { symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true } }))
+    fake.on('GET', '/v2/assets/BTCUSD', () => ({ status: 200,
+      body: { symbol: 'BTC/USD', class: 'crypto', status: 'active', tradable: true, fractionable: true, price_increment: '0.01' } }))
     const ctx = await boot({ keys: 'credentials' })
     const venue = venueOf(ctx)
     // The credentials provider may start after the venue; the venue sets up once it appears.
@@ -171,9 +174,11 @@ describe('trading-alpaca real composition', () => {
 
     const aapl = { assetClass: 'equity', ticker: 'AAPL' } as const
     expect((await venue.account()).equity).toBe(10)
-    expect(await venue.positions()).toEqual([])
+    expect(await venue.positions()).toMatchObject([{ symbol: request.symbol, qty: 0.0002, qtyAvailable: 0 }])
     expect(await venue.openOrders()).toEqual([])
     expect((await venue.asset(aapl)).tradable).toBe(true)
+    expect(await venue.asset(aapl)).not.toHaveProperty('minNotional')
+    expect((await venue.asset(request.symbol)).minNotional).toBe(10)
     expect(await venue.marketOpen(aapl)).toBe(true)
     expect((await venue.latestQuote(aapl)).ask).toBe(2)
     expect(await venue.bars(aapl, '1D', { limit: 5 })).toEqual([])

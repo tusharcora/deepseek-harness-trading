@@ -177,7 +177,7 @@ describe('reads', () => {
   it('maps the account, positions, and open orders', async () => {
     fake.on('GET', '/v2/account', () => ({ status: 200, body: { equity: '10', cash: '5', last_equity: '9', buying_power: '5' } }))
     fake.on('GET', '/v2/positions', () => ({ status: 200, body: [{ symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2',
-      avg_entry_price: '1', current_price: '2', market_value: '4', unrealized_pl: '2' }] }))
+      qty_available: '2', avg_entry_price: '1', current_price: '2', market_value: '4', unrealized_pl: '2' }] }))
     fake.on('GET', '/v2/orders', () => ({ status: 200, body: [placed] }))
     expect((await account(http)).equity).toBe(10)
     expect((await positions(http))[0]?.qty).toBe(2)
