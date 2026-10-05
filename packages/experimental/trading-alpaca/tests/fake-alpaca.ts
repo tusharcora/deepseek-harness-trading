@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 /** One recorded request. */
@@ -38,30 +38,10 @@ export class FakeAlpaca {
 
   async start(): Promise<void> {
     this.server = createServer((incoming, outgoing) => {
-      void readBody(incoming).then((text) => {
-        const url = new URL(incoming.url ?? '/', 'http://fake')
-        const keyHeader = incoming.headers['apca-api-key-id']
-        const request: RecordedRequest = {
-          method: incoming.method ?? 'GET',
-          path: url.pathname,
-          query: url.searchParams,
-          body: text === '' ? undefined : JSON.parse(text) as unknown,
-          keyId: typeof keyHeader === 'string' ? keyHeader : undefined,
-        }
-        this.requests.push(request)
-        const route = this.routes.find(r => r.method === request.method && r.path === request.path)
-        const reply: FakeReply = route === undefined ? { status: 404, body: { message: 'not found' } } : route.respond(request)
-        setTimeout(() => {
-          const text = reply.rawBody ?? (reply.body === undefined ? '' : JSON.stringify(reply.body))
-          if (reply.truncate === true) {
-            outgoing.writeHead(reply.status, { 'content-type': 'application/json', 'content-length': String(text.length * 2), ...reply.headers })
-            outgoing.write(text.slice(0, Math.ceil(text.length / 2)))
-            setTimeout(() => { outgoing.socket?.destroy() }, 5)
-            return
-          }
-          outgoing.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers })
-          outgoing.end(text)
-        }, reply.delayMs ?? 0)
+      void readBody(incoming).then((text) => { this.answer(incoming, outgoing, text) }).catch((error: unknown) => {
+        // A throwing responder or an unparseable request body answers 500 instead of leaving the request hanging.
+        if (!outgoing.headersSent) outgoing.writeHead(500, { 'content-type': 'application/json' })
+        outgoing.end(JSON.stringify({ message: (error as Error).message }))
       })
     })
     const address = await new Promise<AddressInfo>((resolve) => {
@@ -69,6 +49,33 @@ export class FakeAlpaca {
       server.listen(0, '127.0.0.1', () => { resolve(server.address() as AddressInfo) })
     })
     this.url = `http://127.0.0.1:${String(address.port)}`
+  }
+
+  private answer(incoming: IncomingMessage, outgoing: ServerResponse, text: string): void {
+    const url = new URL(incoming.url ?? '/', 'http://fake')
+    const keyHeader = incoming.headers['apca-api-key-id']
+    const request: RecordedRequest = {
+      method: incoming.method ?? 'GET',
+      path: url.pathname,
+      query: url.searchParams,
+      body: text === '' ? undefined : JSON.parse(text) as unknown,
+      keyId: typeof keyHeader === 'string' ? keyHeader : undefined,
+    }
+    this.requests.push(request)
+    const route = this.routes.find(r => r.method === request.method && r.path === request.path)
+    const reply: FakeReply = route === undefined ? { status: 404, body: { message: 'not found' } } : route.respond(request)
+    setTimeout(() => {
+      const text = reply.rawBody ?? (reply.body === undefined ? '' : JSON.stringify(reply.body))
+      if (reply.truncate === true) {
+        const length = String(text.length * 2)
+        outgoing.writeHead(reply.status, { 'content-type': 'application/json', 'content-length': length, ...reply.headers })
+        outgoing.write(text.slice(0, Math.ceil(text.length / 2)))
+        setTimeout(() => { outgoing.socket?.destroy() }, 5)
+        return
+      }
+      outgoing.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers })
+      outgoing.end(text)
+    }, reply.delayMs ?? 0)
   }
 
   async stop(): Promise<void> {
