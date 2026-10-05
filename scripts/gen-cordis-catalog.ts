@@ -130,6 +130,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   workspaceFiles: 'workspace.md',
   terminalController: 'workspace.md',
   directoryPickerController: 'workspace.md',
+  tradingVenue: 'trading.md',
 }
 
 /**
@@ -219,6 +220,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'session-telemetry': 'session-telemetry.md',
   'feedback': 'feedback.md',
   'tools': 'tools.md',
+  'trading': 'trading.md',
   'user-questions': 'user-questions.md',
   'webserver': 'web-server.md',
   'workflow': 'workflow.md',
