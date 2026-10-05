@@ -12,6 +12,7 @@ export type OrderViolationCode =
   | 'not-tradable'
   | 'size'
   | 'below-minimum'
+  | 'below-minimum-value'
   | 'price-fields'
   | 'notional-type'
   | 'order-type'
@@ -55,6 +56,13 @@ export function validateOrder(order: OrderRequest, asset: Asset): OrderViolation
 
   const needsLimit = order.type === 'limit' || order.type === 'stop_limit'
   const needsStop = order.type === 'stop' || order.type === 'stop_limit'
+  // A quantity-based market order has no known value here; the broker checks its minimum.
+  const value = order.notional ?? (needsLimit && order.qty !== undefined && order.limitPrice !== undefined
+    ? order.qty * order.limitPrice
+    : undefined)
+  if (asset.minNotional !== undefined && value !== undefined && positiveFinite(value) && value < asset.minNotional) {
+    add('below-minimum-value', `minimum order value for ${ticker} is $${asset.minNotional}`)
+  }
   if (needsLimit !== (order.limitPrice !== undefined)) {
     add('price-fields', needsLimit ? `${order.type} orders need limit_price` : `${order.type} orders take no limit_price`)
   }

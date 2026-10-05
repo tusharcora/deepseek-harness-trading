@@ -3969,7 +3969,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Asset',
-    declaration: 'export interface Asset {\n    readonly symbol: TradingSymbol;\n    readonly tradable: boolean;\n    readonly fractionable: boolean;\n    readonly minOrderSize?: number;\n    readonly priceIncrement: number;\n}',
+    declaration: 'export interface Asset {\n    readonly symbol: TradingSymbol;\n    readonly tradable: boolean;\n    readonly fractionable: boolean;\n    readonly minOrderSize?: number;\n    readonly minNotional?: number;\n    readonly priceIncrement: number;\n}',
   },
   {
     name: 'AssetClass',

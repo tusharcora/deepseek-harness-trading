@@ -104,6 +104,8 @@ export interface Asset {
   readonly fractionable: boolean
   /** Smallest accepted quantity, when the broker publishes one. */
   readonly minOrderSize?: number
+  /** Smallest order value in dollars the broker accepts, when it enforces one. */
+  readonly minNotional?: number
   /** Smallest price step for limit and stop prices. */
   readonly priceIncrement: number
 }
