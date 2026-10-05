@@ -149,13 +149,13 @@ export class AccountSafety {
       try {
         await this.suspend(false)
       } catch (error) {
-        await this.store.set({ ...state, flattenWindowOpen: false })
+        await this.store.set({ ...this.store.get(), flattenWindowOpen: false })
         throw error
       }
       try {
         return await run()
       } finally {
-        await this.store.set({ ...state, flattenWindowOpen: false, suspendPending: true })
+        await this.store.set({ ...this.store.get(), flattenWindowOpen: false, suspendPending: true })
         await this.confirmSuspension()
       }
     })

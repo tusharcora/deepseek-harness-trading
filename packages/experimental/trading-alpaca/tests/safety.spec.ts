@@ -198,6 +198,23 @@ describe('flatten window', () => {
     expect(saved.flattenWindowOpen).toBe(false)
   })
 
+  it('keeps the reason of a Halt requested while the window holds the queue', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    await s.halt('first')
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const window = s.withFlattenWindow(async () => { await gate })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const halting = s.halt('second')
+    release()
+    await window
+    await halting
+    expect(saved).toMatchObject({ halted: true, haltReason: 'second', flattenWindowOpen: false })
+    expect(config.suspend_trade).toBe(true)
+  })
+
   it('runs the work directly when not halted', async () => {
     accountConfig(fake, safe)
     const s = safety()
