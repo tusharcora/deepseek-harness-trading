@@ -1764,7 +1764,7 @@ git commit -m "feat(trading-alpaca): map Alpaca records and read quotes, bars, c
   - An `unavailable` failure (network, timeout, dropped body, redirect, 5xx) is answered by a lookup, then a second lookup after `confirmDelayMs`; found → that order; absent both times → `unavailable` "the order was not placed".
   - A 2xx whose body cannot be mapped means Alpaca accepted something: two lookups as above; absent both times → `unknown-outcome`.
   - A lookup that itself fails → `unknown-outcome`.
-- Close contract: `closePosition` cancels the symbol's open orders (bracket legs and resting exits hold the shares), polls every `settleDelayMs` up to `settleChecks` times until none are open, then closes.
+- Close contract: `closePosition` cancels the symbol's open orders (bracket legs and resting exits hold the shares), ignoring per-order cancel failures (cancelling one bracket leg cancels the other, so the second cancel can be rejected), polls every `settleDelayMs` up to `settleChecks` times until none are open, then closes.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1911,6 +1911,17 @@ describe('cancel, close, flatten', () => {
       'GET /v2/orders', 'DELETE /v2/orders/o-1', 'GET /v2/orders', 'GET /v2/orders', 'DELETE /v2/positions/BTCUSD',
     ])
     expect(waits).toEqual([7, 7])
+  })
+
+  it('still closes when cancelling one bracket leg already cancelled the other', async () => {
+    const legs = [placed, { ...placed, id: 'o-2', client_order_id: 'c-2' }]
+    let polls = 0
+    fake.on('GET', '/v2/orders', () => ({ status: 200, body: ++polls === 1 ? legs : [] }))
+    fake.on('DELETE', '/v2/orders/o-1', () => ({ status: 204 }))
+    fake.on('DELETE', '/v2/orders/o-2', () => ({ status: 422, body: { message: 'order is not cancelable' } }))
+    fake.on('DELETE', '/v2/positions/BTCUSD', () => ({ status: 200, body: { ...placed, side: 'sell' } }))
+    expect((await closePosition(http, { assetClass: 'crypto', ticker: 'BTC/USD' }, timing())).side).toBe('sell')
+    expect(fake.requests.filter(r => r.method === 'DELETE').map(r => r.path)).toEqual(['/v2/orders/o-1', '/v2/orders/o-2', '/v2/positions/BTCUSD'])
   })
 
   it('closes after the settle checks run out, and closes at once when nothing rests', async () => {
@@ -2112,7 +2123,14 @@ export async function cancelOrder(http: AlpacaHttp, id: BrokerOrderId): Promise<
  */
 export async function closePosition(http: AlpacaHttp, symbol: TradingSymbol, timing: OrderTiming): Promise<BrokerOrder> {
   let resting = await openOrders(http, symbol)
-  for (const order of resting) await cancelOrder(http, brandString<BrokerOrderId>(order.id))
+  for (const order of resting) {
+    try {
+      await cancelOrder(http, brandString<BrokerOrderId>(order.id))
+    } catch (cancelError) {
+      // An order already cancelled with its bracket sibling, or filling: the settle poll below decides.
+      void cancelError
+    }
+  }
   for (let check = 0; check < timing.settleChecks && resting.length > 0; check++) {
     await timing.sleep(timing.settleDelayMs)
     resting = await openOrders(http, symbol)
@@ -2156,10 +2174,11 @@ git commit -m "feat(trading-alpaca): submit orders idempotently and add cancel, 
 
 **Interfaces:**
 - Consumes: `AlpacaHttp`; `accountConfig` fake (Task 3).
-- Produces: `SafetyState = { halted, haltReason, flattenWindowOpen, suspendPending }`, `SafetyStateStore = { get(): SafetyState; set(state): Promise<void> }`, `SafetyTiming = { suspendRetryMs, sleep }`, `INITIAL_SAFETY_STATE`, `AccountSafety` with `start(): Promise<{ halted: boolean; reason: string }>`, `halt(reason): Promise<boolean>` (true when Alpaca confirmed the suspension), `resume()`, `withFlattenWindow<T>(run): Promise<T>`, `check(): Promise<string | undefined>` (the drift reason after halting, or undefined), `isHalted(): boolean`.
+- Produces: `SafetyState = { halted, haltReason, flattenWindowOpen, suspendPending }`, `SafetyStateStore = { get(): SafetyState; set(state): Promise<void> }`, `SafetyTiming = { suspendRetryMs, sleep }`, `INITIAL_SAFETY_STATE`, `AccountSafety` with `start(): Promise<{ halted: boolean; reason: string }>`, `halt(reason): Promise<boolean>` (true when Alpaca confirmed the suspension), `haltCounter(): number`, `resume(since?: number)`, `withFlattenWindow<T>(run): Promise<T>`, `check(): Promise<string | undefined>` (the drift reason after halting, or undefined), `isHalted(): boolean`.
 - Contract (safety-critical — do not adjust these tests; report BLOCKED if one does not fit):
   - Every public operation runs exclusively (one at a time, in call order), so a drift check can never observe the flatten window's lifted suspension.
-  - `halt` saves `halted: true, suspendPending: true` before contacting Alpaca, then tries the suspension once plus once per `suspendRetryMs` entry; it never throws because Alpaca is unreachable or the keys are missing.
+  - `halt` saves `halted: true, suspendPending: true` immediately — before queueing behind any in-flight operation — then, in the queue, tries the suspension once plus once per `suspendRetryMs` entry; it never throws because Alpaca is unreachable or the keys are missing.
+  - A `resume` never clears a Halt requested after the user asked to resume (`since`); the desk stays halted and the suspension is restored.
   - A pending suspension is retried by `check` and `start` and is never reported as drift.
   - The flatten window saves `flattenWindowOpen: true` before lifting the suspension; afterwards it saves the window closed with the suspension pending, then confirms it. A failed restore leaves the desk halted with the suspension pending, never a stale open window.
 
@@ -2268,6 +2287,37 @@ describe('halt and resume', () => {
     expect(await s.check()).toBeUndefined()
     expect(config.suspend_trade).toBe(true)
     expect(saved.suspendPending).toBe(false)
+  })
+
+  it('saves a Halt at once, even while a slow operation holds the queue', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { ...config }, delayMs: 60 }))
+    const check = s.check()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const halting = s.halt('user halt')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(saved).toMatchObject({ halted: true, suspendPending: true })
+    await check
+    expect(await halting).toBe(true)
+    expect(config.suspend_trade).toBe(true)
+  })
+
+  it('keeps a Halt requested while a resume is running', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    await s.halt('first')
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { ...config }, delayMs: 40 }))
+    const resuming = s.resume()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const halting = s.halt('second')
+    await resuming
+    await halting
+    expect(s.isHalted()).toBe(true)
+    expect(saved.haltReason).toBe('second')
+    expect(config.suspend_trade).toBe(true)
   })
 
   it('halts locally without keys', async () => {
@@ -2449,6 +2499,7 @@ const PATH = '/v2/account/configurations'
 /** Enforces and watches the account's safety settings. */
 export class AccountSafety {
   private queue: Promise<unknown> = Promise.resolve()
+  private haltCount = 0
 
   /**
    * @param http - REST client.
@@ -2492,26 +2543,40 @@ export class AccountSafety {
   }
 
   /**
-   * Halt: save the Halt first, then suspend at the broker with retries.
+   * Halt: save the Halt at once (not behind the queue), then suspend at the broker with retries in the queue.
    * @param reason - readable cause.
    * @returns true when Alpaca confirmed the suspension; false leaves it pending for {@link check} to retry.
    */
-  halt(reason: string): Promise<boolean> {
-    return this.exclusive(async () => {
-      await this.store.set({ halted: true, haltReason: reason, flattenWindowOpen: false, suspendPending: true })
-      return this.confirmSuspension()
-    })
+  async halt(reason: string): Promise<boolean> {
+    this.haltCount++
+    await this.store.set({ ...this.store.get(), halted: true, haltReason: reason, suspendPending: true })
+    return this.exclusive(() => this.confirmSuspension())
   }
 
   /**
-   * Re-apply the safety settings and lift the Halt.
-   * @returns when the broker and saved state agree the desk is running.
+   * Number of Halts requested so far; pass it to {@link resume} to make Halts requested after this point win.
+   * @returns the Halt counter.
    */
-  resume(): Promise<void> {
+  haltCounter(): number {
+    return this.haltCount
+  }
+
+  /**
+   * Re-apply the safety settings and lift the Halt, unless a Halt was requested after `since`; then the desk stays
+   * halted and the suspension is restored.
+   * @param since - Halt counter when the user asked to resume; defaults to now.
+   * @returns when the broker and saved state agree.
+   */
+  resume(since: number = this.haltCount): Promise<void> {
     return this.exclusive(async () => {
       await this.applySafeSettings()
       await this.suspend(false)
-      await this.store.set(INITIAL_SAFETY_STATE)
+      if (this.haltCount === since) {
+        await this.store.set(INITIAL_SAFETY_STATE)
+        return
+      }
+      await this.store.set({ ...this.store.get(), suspendPending: true })
+      await this.confirmSuspension()
     })
   }
 
@@ -2955,7 +3020,7 @@ git commit -m "feat(trading-alpaca): stream order updates with reconnect and aut
 **Interfaces:**
 - Consumes: everything from Tasks 3–8; `TradingVenueGateway`, `VenueError`.
 - Produces: `VenueCore` (all venue behavior with injected collaborators), `AlpacaVenue` (default export; the `TradingVenueGateway` provider), `tradingSafetyDomainSpec`.
-- `VenueCore` status machine: no keys → `unconfigured` (every broker operation throws `VenueError('unconfigured', 'Alpaca keys not configured — add them in Settings → Trading')`; the next operation retries setup); safety `blocked` → `blocked` (reads, `closePosition`, and `flatten` work; `submitOrder` and `resume` throw `blocked`); halted → `halted` (`submitOrder` throws `VenueError('halted', 'trading is halted')`; `closePosition` and `flatten` run inside the flatten window). `halt` works in every state, including without keys: it marks the desk halted before contacting Alpaca, and reports a pending suspension when Alpaca does not confirm. Every status change emits `trading/venue-status`.
+- `VenueCore` keeps no status of its own: `status()` is derived on every call — `halted` whenever `AccountSafety.isHalted()` (the saved flag), else `blocked` when setup found the account unsafe, else `unconfigured` until setup has run with keys, else `ready`; `submitOrder` refuses whenever `isHalted()` is true, so a pending suspension never lets an order through. Status rules: no keys → `unconfigured` (every broker operation throws `VenueError('unconfigured', 'Alpaca keys not configured — add them in Settings → Trading')`; the next operation retries setup); safety `blocked` → `blocked` (reads, `closePosition`, and `flatten` work; `submitOrder` and `resume` throw `blocked`); halted → `halted` (`submitOrder` throws `VenueError('halted', 'trading is halted')`; `closePosition` and `flatten` run inside the flatten window). `halt` works in every state, including without keys: it marks the desk halted before contacting Alpaca, and reports a pending suspension when Alpaca does not confirm. Every status change emits `trading/venue-status`.
 
 - [ ] **Step 1: Write the failing `VenueCore` tests**
 
@@ -3068,6 +3133,7 @@ describe('VenueCore orders and Halt', () => {
         : (Object.assign(config, request.body), { status: 200, body: { ...config } })))
     await venue.halt('user halt')
     expect(venue.status()).toBe('halted')
+    expect(saved.suspendPending).toBe(true)
     expect(statuses.slice(-2)).toEqual([
       ['halted', 'user halt'], ['halted', 'user halt; the Alpaca suspension is pending and will be retried'],
     ])
@@ -3076,6 +3142,34 @@ describe('VenueCore orders and Halt', () => {
     const keyless = core()
     await keyless.venue.halt('user halt')
     expect(keyless.venue.status()).toBe('halted')
+  })
+
+  it('stays halted when Halt is clicked while startup setup is still running', async () => {
+    const config = accountConfig(fake, safe)
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { ...config }, delayMs: 40 }))
+    const { venue } = core()
+    const setup = venue.prepare()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const halting = venue.halt('user halt')
+    await setup
+    await halting
+    expect(venue.status()).toBe('halted')
+    expect(statuses.at(-1)?.[0]).toBe('halted')
+    await expect(venue.submitOrder(request)).rejects.toMatchObject({ code: 'halted' })
+  })
+
+  it('stays halted when Halt is clicked right after Resume', async () => {
+    const config = accountConfig(fake, safe)
+    const { venue } = core()
+    await venue.halt('first')
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { ...config }, delayMs: 30 }))
+    const resuming = venue.resume()
+    const halting = venue.halt('second')
+    await resuming
+    await halting
+    expect(venue.status()).toBe('halted')
+    expect(statuses.at(-1)?.[0]).toBe('halted')
+    expect(config.suspend_trade).toBe(true)
   })
 
   it('starts halted from saved state', async () => {
@@ -3228,8 +3322,8 @@ const UNCONFIGURED = 'Alpaca keys not configured — add them in Settings → Tr
 
 /** Venue behavior shared by the Alpaca service. */
 export class VenueCore {
-  private current: VenueStatus = 'unconfigured'
-  private blockedReason = ''
+  private configured = false
+  private blockedReason: string | undefined
   private setup: Promise<void> | undefined
   private readonly safety: AccountSafety
   private readonly listeners = new Set<(event: OrderStreamEvent) => void>()
@@ -3241,11 +3335,13 @@ export class VenueCore {
   }
 
   /**
-   * Current readiness.
+   * Current readiness, derived from the saved Halt flag and the setup result.
    * @returns the status.
    */
   status(): VenueStatus {
-    return this.current
+    if (this.safety.isHalted()) return 'halted'
+    if (this.blockedReason !== undefined) return 'blocked'
+    return this.configured ? 'ready' : 'unconfigured'
   }
 
   /**
@@ -3254,7 +3350,7 @@ export class VenueCore {
    */
   async prepare(): Promise<void> {
     this.setup ??= this.runSetup().finally(() => {
-      if (this.current === 'unconfigured') this.setup = undefined
+      if (!this.configured && this.blockedReason === undefined) this.setup = undefined
     })
     await this.setup
   }
@@ -3286,7 +3382,7 @@ export class VenueCore {
   /** @param request - planned order. @returns the accepted order. */
   async submitOrder(request: BrokerOrderRequest): Promise<BrokerOrder> {
     await this.orderable()
-    if (this.current === 'halted') throw new VenueError('trading is halted', 'halted')
+    if (this.safety.isHalted()) throw new VenueError('trading is halted', 'halted')
     return orders.submitOrder(this.deps.http, request, this.deps.timing)
   }
 
@@ -3311,16 +3407,18 @@ export class VenueCore {
    * @returns when the desk is halted; the broker suspension may still be pending.
    */
   async halt(reason: string): Promise<void> {
-    this.setStatus('halted', reason)
-    const confirmed = await this.safety.halt(reason)
-    if (!confirmed) this.deps.emitStatus('halted', `${reason}; the Alpaca suspension is pending and will be retried`)
+    const confirming = this.safety.halt(reason)
+    await Promise.resolve()
+    this.publish(reason)
+    if (!(await confirming)) this.publish(`${reason}; the Alpaca suspension is pending and will be retried`)
   }
 
-  /** @returns when running again. */
+  /** @returns when running again, unless a Halt arrived meanwhile. */
   async resume(): Promise<void> {
+    const since = this.safety.haltCounter()
     await this.orderable()
-    await this.safety.resume()
-    this.setStatus('ready', 'trading resumed')
+    await this.safety.resume(since)
+    this.publish(this.safety.isHalted() ? 'a Halt arrived while resuming' : 'trading resumed')
   }
 
   /**
@@ -3328,9 +3426,9 @@ export class VenueCore {
    * @returns the drift reason, or undefined when the settings hold or the venue is not set up.
    */
   async checkDrift(): Promise<string | undefined> {
-    if (this.current !== 'ready' && this.current !== 'halted') return undefined
+    if (!this.configured && !this.safety.isHalted()) return undefined
     const reason = await this.safety.check()
-    if (reason !== undefined) this.setStatus('halted', reason)
+    if (reason !== undefined) this.publish(reason)
     return reason
   }
 
@@ -3381,28 +3479,27 @@ export class VenueCore {
     if (!(await this.deps.keysPresent())) return
     try {
       const start = await this.safety.start()
-      if (start.halted) this.setStatus('halted', start.reason)
-      else this.setStatus('ready', 'account safety settings verified')
+      this.configured = true
+      this.publish(start.halted ? start.reason : 'account safety settings verified')
     } catch (error) {
       if (!(error instanceof VenueError) || error.code !== 'blocked') throw error
       this.blockedReason = error.message
-      this.setStatus('blocked', error.message)
+      this.publish(error.message)
     }
   }
 
   private async readable(): Promise<void> {
     await this.prepare()
-    if (this.current === 'unconfigured') throw new VenueError(UNCONFIGURED, 'unconfigured')
+    if (!this.configured && this.blockedReason === undefined) throw new VenueError(UNCONFIGURED, 'unconfigured')
   }
 
   private async orderable(): Promise<void> {
     await this.readable()
-    if (this.current === 'blocked') throw new VenueError(this.blockedReason, 'blocked')
+    if (this.blockedReason !== undefined) throw new VenueError(this.blockedReason, 'blocked')
   }
 
-  private setStatus(status: VenueStatus, reason: string): void {
-    this.current = status
-    this.deps.emitStatus(status, reason)
+  private publish(reason: string): void {
+    this.deps.emitStatus(this.status(), reason)
   }
 }
 ```
@@ -3655,11 +3752,18 @@ git commit -m "docs(trading-alpaca): document the trading venue and its Alpaca p
 - [ ] **Step 1: Write the e2e test**
 
 ```ts
+/**
+ * Opt-in Alpaca paper e2e. Effects on the paper account named by ALPACA_API_KEY: sets no_shorting=true and
+ * max_margin_multiplier=1 (they stay set); places and cancels a far-from-market BTC/USD limit order; buys a tiny
+ * amount of BTC/USD and closes the whole BTC/USD position. The second test refuses to run if the account already
+ * holds BTC/USD or has open BTC/USD orders. Each test cleans up in `finally`.
+ */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { ClientOrderId } from '@deepseek-ai/dsh-experimental-trading'
+import type { ClientOrderId, OrderUpdate } from '@deepseek-ai/dsh-experimental-trading'
 import { describe, expect, it } from 'vitest'
 import { AlpacaHttp } from '../src/http.ts'
 import { INITIAL_SAFETY_STATE, type SafetyState } from '../src/safety.ts'
+import { TradeUpdateStream } from '../src/stream.ts'
 import { VenueCore } from '../src/venue.ts'
 
 const keyId = process.env.ALPACA_API_KEY
@@ -3686,34 +3790,59 @@ describe.skipIf(keyId === undefined || secret === undefined)('Alpaca paper', () 
     await venue.prepare()
     expect(venue.status()).toBe('ready')
     expect((await venue.asset(btc)).symbol).toEqual(btc)
+    const updates: OrderUpdate[] = []
+    const stream = new TradeUpdateStream({ url: 'wss://paper-api.alpaca.markets/stream', backoffMs: [1_000],
+      keys: async () => ({ keyId: keyId ?? '', secret: secret ?? '' }),
+      onEvent: event => { if (event.kind === 'update') updates.push(event.update) },
+      onError: error => { throw error } })
+    stream.start()
+    await sleep(3_000)
     const quote = await venue.latestQuote(btc)
     const clientOrderId = brandString<ClientOrderId>(`dsh-e2e-${String(Date.now())}`)
     const request = { symbol: btc, side: 'buy', qty: 0.0001, type: 'limit', limitPrice: Math.floor(quote.bid * 0.5),
       timeInForce: 'gtc', clientOrderId } as const
     const first = await venue.submitOrder(request)
-    const again = await venue.submitOrder(request)
-    expect(again.id).toBe(first.id)
-    expect((await venue.openOrders()).some(o => o.id === first.id)).toBe(true)
-    await venue.cancelOrder(first.id)
+    try {
+      const again = await venue.submitOrder(request)
+      expect(again.id).toBe(first.id)
+      expect((await venue.openOrders()).some(o => o.id === first.id)).toBe(true)
+    } finally {
+      await venue.cancelOrder(first.id)
+    }
+    const events = (): string[] => updates.filter(u => u.order.clientOrderId === clientOrderId).map(u => u.event)
+    for (let i = 0; i < 20 && !events().includes('canceled'); i++) await sleep(500)
+    stream.stop()
+    expect(events()).toContain('new')
+    expect(events()).toContain('canceled')
   }, 60_000)
 
   it('closes a position whose coins are held by a resting sell order', async () => {
     const venue = paperVenue()
     await venue.prepare()
+    const holding = (await venue.positions()).some(p => p.symbol.ticker === 'BTC/USD')
+    const resting = (await venue.openOrders()).some(o => o.symbol.ticker === 'BTC/USD')
+    if (holding || resting) throw new Error('this paper account already holds BTC/USD or has open BTC/USD orders; use a clean paper account')
     const stamp = String(Date.now())
     const quote = await venue.latestQuote(btc)
-    await venue.submitOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: Math.ceil(quote.ask * 1.02),
-      timeInForce: 'ioc', clientOrderId: brandString<ClientOrderId>(`dsh-e2e-buy-${stamp}`) })
-    let held = 0
-    for (let i = 0; i < 20 && held === 0; i++) {
-      await sleep(500)
-      held = (await venue.positions()).find(p => p.symbol.ticker === 'BTC/USD')?.qty ?? 0
+    let closed = false
+    try {
+      await venue.submitOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: Math.ceil(quote.ask * 1.02),
+        timeInForce: 'ioc', clientOrderId: brandString<ClientOrderId>(`dsh-e2e-buy-${stamp}`) })
+      let held = 0
+      for (let i = 0; i < 20 && held === 0; i++) {
+        await sleep(500)
+        held = (await venue.positions()).find(p => p.symbol.ticker === 'BTC/USD')?.qty ?? 0
+      }
+      expect(held).toBeGreaterThan(0)
+      await venue.submitOrder({ symbol: btc, side: 'sell', qty: held, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
+        timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>(`dsh-e2e-rest-${stamp}`) })
+      const closing = await venue.closePosition(btc)
+      closed = true
+      expect(closing.side).toBe('sell')
+    } finally {
+      if (!closed && (await venue.positions()).some(p => p.symbol.ticker === 'BTC/USD')) await venue.closePosition(btc)
+      for (const order of await venue.openOrders()) if (order.symbol.ticker === 'BTC/USD') await venue.cancelOrder(order.id)
     }
-    expect(held).toBeGreaterThan(0)
-    await venue.submitOrder({ symbol: btc, side: 'sell', qty: held, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
-      timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>(`dsh-e2e-rest-${stamp}`) })
-    const closing = await venue.closePosition(btc)
-    expect(closing.side).toBe('sell')
   }, 120_000)
 })
 ```
