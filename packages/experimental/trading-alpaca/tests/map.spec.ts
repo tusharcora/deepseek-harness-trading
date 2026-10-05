@@ -61,6 +61,36 @@ describe('venueSymbol', () => {
   })
 })
 
+describe('required record fields', () => {
+  const position = { symbol: 'AAPL', asset_class: 'us_equity', side: 'long', qty: '2', avg_entry_price: '228.10',
+    current_price: '231.42', market_value: '462.84', unrealized_pl: '6.64' }
+  const malformed = (field: string): VenueError => new VenueError(`Alpaca returned a malformed ${field}`, 'unavailable')
+  const without = (record: Record<string, unknown>, field: string): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(record).filter(([key]) => key !== field))
+
+  it('refuses orders missing identity, lifecycle, or symbol fields', () => {
+    for (const field of ['id', 'client_order_id', 'symbol', 'asset_class', 'time_in_force', 'type', 'status']) {
+      expect(() => mapOrder(without(order, field))).toThrow(malformed(field))
+    }
+    expect(() => mapOrder({ ...order, id: '' })).toThrow(malformed('id'))
+    expect(() => mapOrder({ ...order, status: 7 })).toThrow(malformed('status'))
+    expect(mapOrder({ ...order, status: 'done_for_day', type: 'trailing_stop' })).toMatchObject({ status: 'open', type: 'other' })
+  })
+
+  it('refuses positions missing a symbol or with a side that contradicts the quantity', () => {
+    expect(() => mapPosition(without(position, 'symbol'))).toThrow(malformed('symbol'))
+    expect(() => mapPosition(without(position, 'asset_class'))).toThrow(malformed('asset_class'))
+    expect(() => mapPosition({ ...position, side: 'shrt' })).toThrow(malformed('side'))
+    expect(() => mapPosition({ ...position, qty: '-1' })).toThrow(malformed('qty'))
+  })
+
+  it('refuses assets missing a symbol, class, or status, and rejects unsupported classes', () => {
+    const raw = { symbol: 'AAPL', class: 'us_equity', status: 'active', tradable: true, fractionable: true }
+    for (const field of ['symbol', 'class', 'status']) expect(() => mapAsset(without(raw, field))).toThrow(malformed(field))
+    expect(() => mapAsset({ ...raw, class: 'us_option' })).toThrow(expect.objectContaining({ code: 'rejected' }) as Error)
+  })
+})
+
 describe('record mapping', () => {
   it('maps the account, treating any broker block as tradingBlocked', () => {
     const raw = { equity: '100240.18', cash: '61402.55', last_equity: '100027.78', buying_power: '61402.55',

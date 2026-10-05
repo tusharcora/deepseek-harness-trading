@@ -68,14 +68,14 @@ export function timestamp(value: unknown, field: string): number {
  */
 export function decimalString(value: number): string {
   if (!Number.isFinite(value)) throw new RangeError(`cannot send ${String(value)} to Alpaca`)
-  const text = String(value)
-  const exponentAt = text.indexOf('e')
-  if (exponentAt === -1) return text
-  const sign = text.startsWith('-') ? '-' : ''
-  const mantissa = text.slice(sign.length, exponentAt)
+  const written = String(value)
+  const exponentAt = written.indexOf('e')
+  if (exponentAt === -1) return written
+  const sign = written.startsWith('-') ? '-' : ''
+  const mantissa = written.slice(sign.length, exponentAt)
   const pointAt = mantissa.indexOf('.')
   const digits = mantissa.replace('.', '')
-  const point = (pointAt === -1 ? mantissa.length : pointAt) + Number(text.slice(exponentAt + 1))
+  const point = (pointAt === -1 ? mantissa.length : pointAt) + Number(written.slice(exponentAt + 1))
   if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`
   return `${sign}${digits}${'0'.repeat(point - digits.length)}`
 }
@@ -87,6 +87,25 @@ export function decimalString(value: number): string {
  */
 export function pathSymbol(symbol: TradingSymbol): string {
   return symbol.ticker.replace('/', '')
+}
+
+/**
+ * Read a required text field.
+ * @param value - raw field.
+ * @param field - Alpaca field name, for the error message.
+ * @returns the non-empty string.
+ * @throws VenueError when the value is absent, empty, or not a string.
+ */
+export function text(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value === '') throw new VenueError(`Alpaca returned a malformed ${field}`, 'unavailable')
+  return value
+}
+
+function positionSign(side: unknown, qty: number): 1 | -1 {
+  if (side === 'short') return -1
+  if (side !== 'long') throw new VenueError('Alpaca returned a malformed side', 'unavailable')
+  if (qty < 0) throw new VenueError('Alpaca returned a malformed qty', 'unavailable')
+  return 1
 }
 
 function orderSide(value: unknown): Side {
@@ -136,10 +155,10 @@ export function mapAccount(raw: RawRecord): AccountSnapshot {
  * @returns the position with signed quantity.
  */
 export function mapPosition(raw: RawRecord): PositionSnapshot {
-  const size = Math.abs(decimal(raw.qty, 'qty'))
+  const qty = decimal(raw.qty, 'qty')
   return {
-    symbol: venueSymbol(String(raw.symbol), String(raw.asset_class)),
-    qty: raw.side === 'short' ? -size : size,
+    symbol: venueSymbol(text(raw.symbol, 'symbol'), text(raw.asset_class, 'asset_class')),
+    qty: positionSign(raw.side, qty) * Math.abs(qty),
     avgEntryPrice: decimal(raw.avg_entry_price, 'avg_entry_price'),
     currentPrice: decimal(raw.current_price, 'current_price'),
     marketValue: decimal(raw.market_value, 'market_value'),
@@ -159,21 +178,21 @@ export function mapOrder(raw: RawRecord): BrokerOrder {
   const stopPrice = optionalDecimal(raw.stop_price, 'stop_price')
   const filledAvgPrice = optionalDecimal(raw.filled_avg_price, 'filled_avg_price')
   const submittedAt = optionalTimestamp(raw.submitted_at, 'submitted_at')
-  const type = String(raw.type)
+  const type = text(raw.type, 'type')
   return {
-    id: brandString<BrokerOrderId>(String(raw.id)),
-    clientOrderId: brandString<ClientOrderId>(String(raw.client_order_id)),
-    symbol: venueSymbol(String(raw.symbol), String(raw.asset_class)),
+    id: brandString<BrokerOrderId>(text(raw.id, 'id')),
+    clientOrderId: brandString<ClientOrderId>(text(raw.client_order_id, 'client_order_id')),
+    symbol: venueSymbol(text(raw.symbol, 'symbol'), text(raw.asset_class, 'asset_class')),
     side: orderSide(raw.side),
     type: ORDER_TYPES.includes(type) ? type as OrderType : 'other',
-    timeInForce: String(raw.time_in_force),
+    timeInForce: text(raw.time_in_force, 'time_in_force'),
     ...qty === undefined ? {} : { qty },
     ...notional === undefined ? {} : { notional },
     ...limitPrice === undefined ? {} : { limitPrice },
     ...stopPrice === undefined ? {} : { stopPrice },
     filledQty: decimal(raw.filled_qty, 'filled_qty'),
     ...filledAvgPrice === undefined ? {} : { filledAvgPrice },
-    status: ORDER_STATUS.get(String(raw.status)) ?? 'open',
+    status: ORDER_STATUS.get(text(raw.status, 'status')) ?? 'open',
     ...submittedAt === undefined ? {} : { submittedAt },
   }
 }
@@ -184,11 +203,11 @@ export function mapOrder(raw: RawRecord): BrokerOrder {
  * @returns broker facts for validation; equities use a one-cent tick.
  */
 export function mapAsset(raw: RawRecord): Asset {
-  const symbol = venueSymbol(String(raw.symbol), String(raw.class))
+  const symbol = venueSymbol(text(raw.symbol, 'symbol'), text(raw.class, 'class'))
   const minOrderSize = optionalDecimal(raw.min_order_size, 'min_order_size')
   return {
     symbol,
-    tradable: raw.tradable === true && raw.status === 'active',
+    tradable: raw.tradable === true && text(raw.status, 'status') === 'active',
     fractionable: raw.fractionable === true,
     ...minOrderSize === undefined ? {} : { minOrderSize },
     priceIncrement: symbol.assetClass === 'crypto' ? decimal(raw.price_increment, 'price_increment') : 0.01,
