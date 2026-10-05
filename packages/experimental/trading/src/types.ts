@@ -227,7 +227,9 @@ export interface OrderUpdate {
 
 /**
  * What an order-update subscriber receives: an update, or a gap after which updates may have been missed (the stream
- * reconnected, or stopped) and the subscriber must re-read open orders and positions.
+ * reconnected, or stopped) and the subscriber must re-read open orders and positions. A gap is delivered only after the
+ * stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or once when the
+ * stream stops for good.
  */
 export type OrderStreamEvent =
   | { readonly kind: 'update'; readonly update: OrderUpdate }

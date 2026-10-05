@@ -134,14 +134,17 @@ export abstract class TradingVenueGateway extends Service {
   abstract cancelOrder(id: BrokerOrderId): Promise<void>
 
   /**
-   * Cancel the instrument's open orders, then close the position at market; allowed while halted or blocked.
+   * Cancel the instrument's open orders, then close the position at market; allowed while halted or blocked. Throws
+   * {@link VenueError} with code `not-found` when there is no position for the instrument.
    * @param symbol - instrument.
    * @returns the closing order.
    */
   abstract closePosition(symbol: TradingSymbol): Promise<BrokerOrder>
 
   /**
-   * Cancel every open order and close every position at market; allowed while halted or blocked.
+   * Cancel every open order, then attempt to close every position at market; allowed while halted or blocked. When any
+   * position fails to close it throws {@link VenueError} with code `rejected` naming the failed instruments; the closes
+   * that succeeded still stand.
    * @returns the closing orders.
    */
   abstract flatten(): Promise<BrokerOrder[]>
@@ -162,7 +165,9 @@ export abstract class TradingVenueGateway extends Service {
 
   /**
    * Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the
-   * listener must re-read open orders and positions, because missed updates are not replayed.
+   * listener must re-read open orders and positions, because missed updates are not replayed. A gap is delivered only
+   * after the stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or
+   * once when the stream stops for good.
    * @param listener - called once per event.
    * @returns a disposer that removes the listener.
    */
