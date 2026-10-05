@@ -79,9 +79,11 @@ describe('AlpacaHttp', () => {
   })
 
   it('refuses to follow a redirect, so the key headers never reach another host', async () => {
-    fake.on('GET', '/v2/account', () => ({ status: 302, headers: { location: 'http://127.0.0.1:1/elsewhere' } }))
+    fake.on('GET', '/elsewhere', () => ({ status: 200, body: { followed: true } }))
+    fake.on('GET', '/v2/account', () => ({ status: 302, headers: { location: `${fake.url}/elsewhere` } }))
     await expect(client().request('trading', 'GET', '/v2/account')).rejects.toMatchObject({ code: 'unavailable' })
     expect(fake.requests).toHaveLength(1)
+    expect(fake.requests.some(request => request.path === '/elsewhere')).toBe(false)
   })
 
   it('reports a success with an unreadable body as unavailable', async () => {

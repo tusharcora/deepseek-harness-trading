@@ -28,6 +28,8 @@ type Responder = (request: RecordedRequest) => FakeReply
 /** A local Alpaca stand-in: exact method + raw path routes, latest registration wins, every request recorded. */
 export class FakeAlpaca {
   readonly requests: RecordedRequest[] = []
+  /** Errors thrown while answering (a throwing responder, a non-JSON request body); `stop()` fails while any are recorded. */
+  readonly errors: unknown[] = []
   url = ''
   private server: Server | undefined
   private routes: { method: string; path: string; respond: Responder }[] = []
@@ -39,7 +41,9 @@ export class FakeAlpaca {
   async start(): Promise<void> {
     this.server = createServer((incoming, outgoing) => {
       void readBody(incoming).then((text) => { this.answer(incoming, outgoing, text) }).catch((error: unknown) => {
-        // A throwing responder or an unparseable request body answers 500 instead of leaving the request hanging.
+        // Answer 500 so the request does not hang, and record the error so `stop()` fails the test:
+        // a broken responder must never pass for the `unavailable` outcome a 500 maps to.
+        this.errors.push(error)
         if (!outgoing.headersSent) outgoing.writeHead(500, { 'content-type': 'application/json' })
         outgoing.end(JSON.stringify({ message: (error as Error).message }))
       })
@@ -82,6 +86,10 @@ export class FakeAlpaca {
     const server = this.server
     if (server === undefined) return
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    if (this.errors.length > 0) {
+      const messages = this.errors.splice(0).map(error => (error instanceof Error ? error.message : String(error)))
+      throw new Error(`FakeAlpaca failed while answering: ${messages.join('; ')}`)
+    }
   }
 }
 
