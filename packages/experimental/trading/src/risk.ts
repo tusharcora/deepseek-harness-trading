@@ -68,9 +68,10 @@ export interface RiskSnapshot {
   readonly halted: boolean
 }
 
-/** Identifier of one check; `quote` appears alone when no usable price exists. */
+/** Identifier of one check; `quote` or `size` appears alone when the order cannot be estimated. */
 export type RiskCheckId =
   | 'quote'
+  | 'size'
   | 'halted'
   | 'symbol-list'
   | 'stale-quote'
@@ -100,7 +101,7 @@ export interface RiskResult {
   readonly reduceOnly: boolean
   /** Order quantity; derived from the notional for notional orders. */
   readonly quantity: number
-  /** Price used for estimates: limit, then stop, then ask (buy) or bid (sell). */
+  /** Price used for estimates: limit, then stop, then ask (buy) or bid (sell); 0 for a reduce-only exit without a usable price. */
   readonly referencePrice: number
   /** Estimated order value in dollars. */
   readonly estimatedNotional: number
@@ -126,6 +127,10 @@ export function isReduceOnly(side: Side, quantity: number, exposure: SymbolExpos
   return exposure.positionQty < 0 && quantity <= -exposure.positionQty - exposure.openBuyQty - exposure.pendingBuyQty
 }
 
+function rejected(check: RiskCheck): RiskResult {
+  return { ok: false, reduceOnly: false, quantity: 0, referencePrice: 0, estimatedNotional: 0, checks: [check] }
+}
+
 function referencePrice(order: OrderRequest, quote: Quote): number {
   if (order.limitPrice !== undefined) return order.limitPrice
   if (order.stopPrice !== undefined) return order.stopPrice
@@ -142,13 +147,17 @@ function referencePrice(order: OrderRequest, quote: Quote): number {
 export function checkRisk(order: OrderRequest, snapshot: RiskSnapshot, limits: RiskLimits): RiskResult {
   const ticker = order.symbol.ticker
   const price = referencePrice(order, snapshot.quote)
-  if (!(Number.isFinite(price) && price > 0)) {
-    const quoteCheck: RiskCheck = { id: 'quote', ok: false, detail: `no usable ${order.side} price for ${ticker}` }
-    return { ok: false, reduceOnly: false, quantity: 0, referencePrice: 0, estimatedNotional: 0, checks: [quoteCheck] }
-  }
+  const priceUsable = Number.isFinite(price) && price > 0
+  const quoteFailure: RiskCheck = { id: 'quote', ok: false, detail: `no usable ${order.side} price for ${ticker}` }
+  if (order.notional !== undefined && !priceUsable) return rejected(quoteFailure)
   const quantity = order.notional === undefined ? order.qty ?? 0 : order.notional / price
-  const estimatedNotional = order.notional === undefined ? quantity * price : order.notional
+  if (!(Number.isFinite(quantity) && quantity > 0)) {
+    return rejected({ id: 'size', ok: false, detail: 'order size must be a finite number greater than zero' })
+  }
   const reduceOnly = isReduceOnly(order.side, quantity, snapshot.exposure)
+  if (!priceUsable && !reduceOnly) return rejected(quoteFailure)
+  const usedPrice = priceUsable ? price : 0
+  const estimatedNotional = order.notional === undefined ? quantity * usedPrice : order.notional
   const checks: RiskCheck[] = []
   const add = (id: RiskCheckId, ok: boolean, detail: string): void => {
     checks.push({ id, ok, detail })
@@ -162,8 +171,8 @@ export function checkRisk(order: OrderRequest, snapshot: RiskSnapshot, limits: R
     add('symbol-list', listed && !denied, listDetail)
 
     const age = snapshot.now - snapshot.quote.t
-    const stale = order.type === 'market' && snapshot.marketOpen && age > limits.staleQuoteMs
-    add('stale-quote', !stale, `quote is ${Math.round(age / 1000)} s old`)
+    const stale = order.type === 'market' && snapshot.marketOpen && !(age <= limits.staleQuoteMs)
+    add('stale-quote', !stale, Number.isFinite(age) ? `quote is ${Math.round(age / 1000)} s old` : 'quote time is unknown')
 
     add('stop-type', order.type !== 'stop', order.type === 'stop' ? 'orders that add exposure must use stop_limit' : `${order.type} order`)
 
@@ -187,11 +196,12 @@ export function checkRisk(order: OrderRequest, snapshot: RiskSnapshot, limits: R
     const cashNeeded = order.side === 'buy' ? snapshot.committedBuyNotional + estimatedNotional : 0
     add('cash', limits.allowMargin || cashNeeded <= snapshot.cash, `needs ${USD.format(cashNeeded)} of ${USD.format(snapshot.cash)} cash`)
 
-    const dayChange = snapshot.lastEquity > 0 ? (snapshot.equity - snapshot.lastEquity) / snapshot.lastEquity : 0
-    add('daily-loss', dayChange > -limits.dailyLossPct, `day P&L ${percent(dayChange)} vs limit -${percent(limits.dailyLossPct)}`)
+    const dayChange = snapshot.lastEquity === 0 ? 0 : (snapshot.equity - snapshot.lastEquity) / snapshot.lastEquity
+    const dayDetail = Number.isFinite(dayChange) ? percent(dayChange) : 'unknown'
+    add('daily-loss', dayChange > -limits.dailyLossPct, `day P&L ${dayDetail} vs limit -${percent(limits.dailyLossPct)}`)
 
     const countDetail = `${snapshot.ordersToday} of ${limits.maxOrdersPerDay} orders today`
     add('orders-per-day', snapshot.ordersToday < limits.maxOrdersPerDay, countDetail)
   }
-  return { ok: checks.every(check => check.ok), reduceOnly, quantity, referencePrice: price, estimatedNotional, checks }
+  return { ok: checks.every(check => check.ok), reduceOnly, quantity, referencePrice: usedPrice, estimatedNotional, checks }
 }

@@ -67,6 +67,13 @@ describe('validateOrder', () => {
     expect(codes({ ...equityBuy, timeInForce: 'gtc' }, aapl)).toEqual([])
   })
 
+  it('needs finite, positive bracket prices', () => {
+    expect(codes({ ...equityBuy, bracket: { takeProfit: Number.NaN, stopLoss: Number.NaN } }, aapl)).toEqual(['bracket'])
+    expect(validateOrder({ ...equityBuy, bracket: { takeProfit: 10, stopLoss: -5 } }, aapl)).toEqual([
+      { code: 'bracket', message: 'bracket prices must be finite numbers greater than zero' },
+    ])
+  })
+
   it('needs whole shares and ordered legs for equity brackets', () => {
     expect(codes({ ...equityBuy, bracket: { takeProfit: 250, stopLoss: 220 } }, aapl)).toEqual([])
     expect(codes({ ...equityBuy, side: 'sell', bracket: { takeProfit: 220, stopLoss: 250 } }, aapl)).toEqual([])

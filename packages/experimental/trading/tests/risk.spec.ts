@@ -127,9 +127,41 @@ describe('checkRisk, bad inputs', () => {
   })
 })
 
-describe('checkRisk, sizeless orders', () => {
-  it('treats a sizeless order as zero quantity', () => {
-    expect(checkRisk({ symbol: buy.symbol, side: 'buy', type: 'market', timeInForce: 'gtc' }, snapshot, limits).quantity).toBe(0)
+describe('checkRisk, fail-closed inputs', () => {
+  const sizeCheck = { id: 'size', ok: false, detail: 'order size must be a finite number greater than zero' }
+
+  it('rejects a sizeless, negative, or NaN quantity even when it looks like an exit', () => {
+    const long = { ...snapshot, exposure: { ...flat, positionQty: 1 } }
+    const sizeless: OrderRequest = { symbol: buy.symbol, side: 'buy', type: 'market', timeInForce: 'gtc' }
+    expect(checkRisk(sizeless, snapshot, limits).checks).toEqual([sizeCheck])
+    expect(checkRisk({ ...buy, side: 'sell', qty: -50 }, long, limits)).toMatchObject({ ok: false, checks: [sizeCheck] })
+    expect(checkRisk({ ...buy, qty: Number.NaN }, snapshot, limits)).toMatchObject({ ok: false, checks: [sizeCheck] })
+  })
+
+  it('fails a notional order without a usable price', () => {
+    const notional: OrderRequest = { symbol: buy.symbol, side: 'buy', notional: 500, type: 'market', timeInForce: 'gtc' }
+    const result = checkRisk(notional, { ...snapshot, quote: { bid: 62_818, ask: 0, t: 998_000 } }, limits)
+    expect(result.checks).toEqual([{ id: 'quote', ok: false, detail: 'no usable buy price for BTC/USD' }])
+  })
+
+  it('treats a quote with an unknown time, or an unknown stale window, as stale', () => {
+    expect(failed(buy, { ...snapshot, quote: { ...snapshot.quote, t: Number.NaN } })).toEqual(['stale-quote'])
+    const undated = { ...snapshot, quote: { ...snapshot.quote, t: Number.NaN } }
+    expect(checkRisk(buy, undated, limits).checks[2]?.detail).toBe('quote time is unknown')
+    expect(failed(buy, snapshot, { ...limits, staleQuoteMs: Number.NaN })).toEqual(['stale-quote'])
+  })
+
+  it('fails the daily-loss check when equity or last equity is not a number', () => {
+    expect(failed(buy, { ...snapshot, equity: 50_000, lastEquity: Number.NaN })).toEqual(['daily-loss'])
+    expect(checkRisk(buy, { ...snapshot, lastEquity: Number.NaN }, limits).checks.find(c => c.id === 'daily-loss')?.detail)
+      .toBe('day P&L unknown vs limit -3.0%')
+  })
+
+  it('still allows a reduce-only exit when the quote has no usable price', () => {
+    const long = { ...snapshot, exposure: { ...flat, positionQty: 0.015 }, quote: { bid: 0, ask: 0, t: 998_000 } }
+    const result = checkRisk({ ...buy, side: 'sell' }, long, limits)
+    expect(result).toMatchObject({ ok: true, reduceOnly: true, referencePrice: 0, estimatedNotional: 0 })
+    expect(result.checks.map(c => c.id)).toEqual(['halted'])
   })
 })
 

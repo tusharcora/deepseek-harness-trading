@@ -80,8 +80,9 @@ export function validateOrder(order: OrderRequest, asset: Asset): OrderViolation
   if (order.bracket !== undefined) {
     if (fractional) add('bracket', 'brackets need a whole-share quantity')
     const { takeProfit, stopLoss } = order.bracket
-    if (order.side === 'buy' && takeProfit <= stopLoss) add('bracket', 'take_profit must be above stop_loss for a buy')
-    if (order.side === 'sell' && takeProfit >= stopLoss) add('bracket', 'take_profit must be below stop_loss for a sell')
+    if (!positiveFinite(takeProfit) || !positiveFinite(stopLoss)) add('bracket', 'bracket prices must be finite numbers greater than zero')
+    else if (order.side === 'buy' && takeProfit <= stopLoss) add('bracket', 'take_profit must be above stop_loss for a buy')
+    else if (order.side === 'sell' && takeProfit >= stopLoss) add('bracket', 'take_profit must be below stop_loss for a sell')
   }
   return violations
 }
