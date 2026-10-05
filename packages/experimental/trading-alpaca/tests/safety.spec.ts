@@ -21,6 +21,10 @@ const failSuspend = (config: FakeAccountConfig, value: boolean, failing: () => b
   })
 }
 
+/** PATCHes that tried to lift the suspension. */
+const lifts = (): unknown[] =>
+  fake.requests.filter(r => r.method === 'PATCH' && (r.body as Partial<FakeAccountConfig>).suspend_trade === false)
+
 beforeEach(async () => {
   fake = new FakeAlpaca(); await fake.start(); saved = INITIAL_SAFETY_STATE; waits = []
   http = new AlpacaHttp({ tradingUrl: fake.url, dataUrl: fake.url, timeoutMs: 2_000, retryDelaysMs: [],
@@ -63,6 +67,23 @@ describe('start', () => {
     const config = accountConfig(fake, safe)
     saved = { halted: true, haltReason: 'user halt', flattenWindowOpen: true, suspendPending: false }
     expect(await safety().start()).toEqual({ halted: true, reason: 'the desk stopped while closing positions; trading stays halted' })
+    expect(config.suspend_trade).toBe(true)
+    expect(saved).toEqual({ halted: true, haltReason: 'the desk stopped while closing positions; trading stays halted',
+      flattenWindowOpen: false, suspendPending: false })
+  })
+})
+
+describe('start recovery ordering', () => {
+  it('re-suspends after a crash inside the window before applying the safety settings, even when they are refused', async () => {
+    const config: FakeAccountConfig = { ...unsafe }
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { ...config } }))
+    fake.on('PATCH', '/v2/account/configurations', (request) => {
+      const body = request.body as Partial<FakeAccountConfig>
+      if (body.suspend_trade !== undefined) config.suspend_trade = body.suspend_trade
+      return { status: 200, body: { ...config } }
+    })
+    saved = { halted: true, haltReason: 'user halt', flattenWindowOpen: true, suspendPending: false }
+    await expect(safety().start()).rejects.toMatchObject({ code: 'blocked' })
     expect(config.suspend_trade).toBe(true)
     expect(saved).toEqual({ halted: true, haltReason: 'the desk stopped while closing positions; trading stays halted',
       flattenWindowOpen: false, suspendPending: false })
@@ -144,6 +165,49 @@ describe('halt and resume', () => {
     expect(s.isHalted()).toBe(true)
     expect(saved).toEqual({ halted: true, haltReason: 'second', flattenWindowOpen: false, suspendPending: false })
     expect(config.suspend_trade).toBe(true)
+    expect(lifts()).toHaveLength(0)
+  })
+
+  it('restores the suspension when a Halt is requested while the resume lifts it', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    await s.halt('first')
+    let halting: Promise<boolean> | undefined
+    fake.on('PATCH', '/v2/account/configurations', (request) => {
+      const body = request.body as Partial<FakeAccountConfig>
+      if (body.suspend_trade === false && halting === undefined) halting = s.halt('during lift')
+      Object.assign(config, body)
+      return { status: 200, body: { ...config } }
+    })
+    await s.resume()
+    expect(await halting).toBe(true)
+    expect(lifts()).toHaveLength(1)
+    expect(saved).toEqual({ halted: true, haltReason: 'during lift', flattenWindowOpen: false, suspendPending: false })
+    expect(config.suspend_trade).toBe(true)
+  })
+
+  it('suspends at Alpaca even when saving the Halt fails, then reports the save failure', async () => {
+    const config = accountConfig(fake, safe)
+    let failNext = true
+    const flaky: SafetyStateStore = { get: () => saved, set: async (state) => {
+      if (failNext) { failNext = false; throw new Error('disk full') }
+      saved = state
+    } }
+    const s = new AccountSafety(http, flaky, { suspendRetryMs: [], sleep: async () => {} })
+    await expect(s.halt('user halt')).rejects.toThrow('disk full')
+    expect(config.suspend_trade).toBe(true)
+  })
+
+  it('keeps an unconfirmed suspension pending, without reporting drift, while Alpaca stays down', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    failSuspend(config, true, () => true)
+    expect(await s.halt('user halt')).toBe(false)
+    expect(await s.check()).toBeUndefined()
+    expect(saved).toEqual({ halted: true, haltReason: 'user halt', flattenWindowOpen: false, suspendPending: true })
+    expect(config.suspend_trade).toBe(false)
   })
 
   it('halts locally without keys', async () => {
@@ -196,6 +260,25 @@ describe('flatten window', () => {
     await expect(s.withFlattenWindow(async () => { ran = true })).rejects.toMatchObject({ code: 'unavailable' })
     expect(ran).toBe(false)
     expect(saved.flattenWindowOpen).toBe(false)
+  })
+
+  it('restores the suspension when the lift fails after Alpaca applied it, and later operations still run', async () => {
+    const config = accountConfig(fake, safe)
+    const s = safety()
+    await s.start()
+    await s.halt('user halt')
+    fake.on('PATCH', '/v2/account/configurations', (request) => {
+      const body = request.body as Partial<FakeAccountConfig>
+      Object.assign(config, body)
+      if (body.suspend_trade === false) return { status: 503, body: { message: 'busy' } }
+      return { status: 200, body: { ...config } }
+    })
+    let ran = false
+    await expect(s.withFlattenWindow(async () => { ran = true })).rejects.toMatchObject({ code: 'unavailable' })
+    expect(ran).toBe(false)
+    expect(config.suspend_trade).toBe(true)
+    expect(saved).toMatchObject({ halted: true, flattenWindowOpen: false, suspendPending: false })
+    expect(await s.check()).toBeUndefined()
   })
 
   it('keeps the reason of a Halt requested while the window holds the queue', async () => {

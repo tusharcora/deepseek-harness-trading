@@ -72,20 +72,21 @@ export class AccountSafety {
   }
 
   /**
-   * Apply the safety settings, then restore Halt from saved state, the broker's suspension, or an interrupted flatten
-   * window; confirm any pending suspension.
+   * Recover an interrupted flatten window or a pending suspension first, so the broker is suspended even when the
+   * safety settings are then refused; apply the safety settings, then restore Halt from saved state or the broker's
+   * suspension.
    * @returns whether the desk starts halted and why.
    * @throws VenueError `blocked` when Alpaca does not keep the safety settings.
    */
   start(): Promise<{ halted: boolean; reason: string }> {
     return this.exclusive(async () => {
+      const recovered = this.store.get()
+      if (recovered.flattenWindowOpen) {
+        await this.store.set({ halted: true, haltReason: CRASH_REASON, flattenWindowOpen: false, suspendPending: true })
+      }
+      if (this.store.get().suspendPending) await this.confirmSuspension()
       const config = await this.applySafeSettings()
       const saved = this.store.get()
-      if (saved.flattenWindowOpen) {
-        await this.store.set({ halted: true, haltReason: CRASH_REASON, flattenWindowOpen: false, suspendPending: true })
-        await this.confirmSuspension()
-        return { halted: true, reason: CRASH_REASON }
-      }
       if (saved.halted || config.suspend_trade === true) {
         const reason = saved.halted ? saved.haltReason : 'trading was suspended at Alpaca'
         const pending = config.suspend_trade !== true
@@ -98,14 +99,19 @@ export class AccountSafety {
   }
 
   /**
-   * Halt: save the Halt at once (not behind the queue), then suspend at the broker with retries in the queue.
+   * Halt: save the Halt at once (not behind the queue), then suspend at the broker with retries in the queue. The
+   * suspension is attempted even when the save fails.
    * @param reason - readable cause.
    * @returns true when Alpaca confirmed the suspension; false leaves it pending for {@link check} to retry.
+   * @throws the store's error when saving the Halt failed, after the suspension attempt.
    */
   async halt(reason: string): Promise<boolean> {
     this.haltCount++
-    await this.store.set({ ...this.store.get(), halted: true, haltReason: reason, suspendPending: true })
-    return this.exclusive(() => this.confirmSuspension())
+    const state: SafetyState = { ...this.store.get(), halted: true, haltReason: reason, suspendPending: true }
+    const [save] = await Promise.allSettled([this.store.set(state)])
+    const confirmed = await this.exclusive(() => this.confirmSuspension())
+    if (save.status === 'rejected') throw save.reason
+    return confirmed
   }
 
   /**
@@ -118,17 +124,21 @@ export class AccountSafety {
 
   /**
    * Re-apply the safety settings and lift the Halt, unless a Halt was requested after `since`; then the desk stays
-   * halted and the suspension is restored.
+   * halted and the suspension is restored. A Halt requested before the resume runs skips the lift entirely.
    * @param since - Halt counter when the user asked to resume; defaults to now.
    * @returns when the broker and saved state agree.
    */
   resume(since: number = this.haltCount): Promise<void> {
     return this.exclusive(async () => {
-      await this.applySafeSettings()
-      await this.suspend(false)
       if (this.haltCount === since) {
-        await this.store.set(INITIAL_SAFETY_STATE)
-        return
+        await this.applySafeSettings()
+        if (this.haltCount === since) {
+          await this.suspend(false)
+          if (this.haltCount === since) {
+            await this.store.set(INITIAL_SAFETY_STATE)
+            return
+          }
+        }
       }
       await this.store.set({ ...this.store.get(), suspendPending: true })
       await this.confirmSuspension()
@@ -149,7 +159,9 @@ export class AccountSafety {
       try {
         await this.suspend(false)
       } catch (error) {
-        await this.store.set({ ...this.store.get(), flattenWindowOpen: false })
+        // The lift may have reached Alpaca before failing: restore the suspension before rethrowing.
+        await this.store.set({ ...this.store.get(), flattenWindowOpen: false, suspendPending: true })
+        await this.confirmSuspension()
         throw error
       }
       try {
