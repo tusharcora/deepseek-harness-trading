@@ -22,10 +22,18 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## Use this package
 
-Load the plugin beside a `storageDomain` provider and, optionally, a credentials provider:
+Load the plugin after the storage stack that provides `storageDomain` and, optionally, a credentials provider:
 
 ```yaml
-- '@deepseek-ai/dsh-experimental-trading-alpaca':
+- name: '@deepseek-ai/dsh-storage'
+- name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: /var/lib/dsh/data
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+- name: '@deepseek-ai/dsh-experimental-trading-alpaca'
+  config:
     mode: paper
 ```
 
@@ -53,11 +61,11 @@ The plugin injects `storageDomain`. Consumers read `ctx.tradingVenue` and depend
 
 ### API keys
 
-Keys resolve on every request and every stream connection, never cached: through the credentials service when one is loaded, otherwise from the launch environment (`ALPACA_API_KEY` and `ALPACA_SECRET_KEY` under the default names). Without both keys the venue reports `unconfigured` and every broker call throws `unconfigured`, except `halt`. Setup runs at start, again when a credentials provider becomes available after this service, and on the next venue call while it has not completed.
+Keys resolve on every request and every stream connection, never cached: through the credentials service when one is loaded, otherwise from the launch environment (`ALPACA_API_KEY` and `ALPACA_SECRET_KEY` under the default names). Without both keys the venue reports `unconfigured`, or `halted` when a saved Halt is set (the status table below decides), and every broker call throws `unconfigured`, except `halt`. Setup runs at start, again when a credentials provider becomes available after this service, and on the next venue call while it has not completed.
 
 ### Paper and live
 
-The trading host decides. Any trading host other than `paper-api.alpaca.markets` or loopback (`127.0.0.1`, `localhost`, `[::1]`), and any `mode: live`, needs `DSH_TRADING_LIVE=1` in the launch environment; otherwise the plugin fails at load. Every request uses `redirect: 'error'`, so key headers never follow a redirect to another host.
+The trading host decides. Any trading host other than `paper-api.alpaca.markets` or loopback (`127.0.0.1`, `localhost`, `[::1]`), and any `mode: live`, needs `DSH_TRADING_LIVE=1` in the launch environment; otherwise the plugin fails at load. The lock checks the trading host only: `dataUrl` and `tradeStreamUrl` overrides receive the API keys without `DSH_TRADING_LIVE`, so point them only at hosts you trust. Every request uses `redirect: 'error'`, so key headers never follow a redirect to another host.
 
 ### Status
 
@@ -97,7 +105,7 @@ Numbers are sent as plain decimal strings, never in exponent notation, and every
 
 ### Order updates
 
-The trade-updates stream connects while at least one listener is subscribed, authenticates, and listens to `trade_updates`. It decodes Alpaca's binary frames and reconnects with `streamBackoffMs`. A `gap` event is delivered after the stream listens again following a reconnect, after an order update that cannot be read, after an Alpaca stream error, and once when Alpaca rejects the keys, which stops the stream. An outage is logged once until the stream listens again.
+The trade-updates stream connects while at least one listener is subscribed, authenticates, and listens to `trade_updates`. It decodes Alpaca's binary frames and reconnects with `streamBackoffMs`. A `gap` event is delivered after the stream listens again following a reconnect, after an order update that cannot be read, after an Alpaca stream error, and once when Alpaca rejects the keys, which stops the stream. A frame that is not valid JSON is reported as an error without a gap event, so consumers should also re-read open orders and positions on a timer. An outage is logged once until the stream listens again.
 
 ### Errors
 

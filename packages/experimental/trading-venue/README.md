@@ -79,7 +79,7 @@ After a `gap` event the listener re-reads open orders and positions, because mis
 | `halted` | `submitOrder` was called while the desk is halted. |
 | `rejected` | The broker refused the request, or `flatten` could not close one or more positions. |
 | `not-found` | The order, position, asset, or quote does not exist. |
-| `rate-limited` | The broker's rate limit was reached and retries were exhausted. |
+| `rate-limited` | The broker's rate limit was reached. Reads are retried first; writes (`submitOrder`, `cancelOrder`, `closePosition`, `flatten`) report it on the first rate-limit response. |
 | `unavailable` | The broker is unreachable, answered with a server error, or sent a response that could not be read. From `submitOrder` it means the order was not placed. |
 | `unknown-outcome` | `submitOrder` may have placed the order but the broker did not confirm it; check open orders before proposing again. |
 
