@@ -127,6 +127,12 @@ describe('checkRisk, bad inputs', () => {
   })
 })
 
+describe('checkRisk, sizeless orders', () => {
+  it('treats a sizeless order as zero quantity', () => {
+    expect(checkRisk({ symbol: buy.symbol, side: 'buy', type: 'market', timeInForce: 'gtc' }, snapshot, limits).quantity).toBe(0)
+  })
+})
+
 describe('isReduceOnly', () => {
   it('recognizes covering a short position', () => {
     expect(isReduceOnly('buy', 1, { ...flat, positionQty: -2, openBuyQty: 0.5 })).toBe(true)

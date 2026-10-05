@@ -149,7 +149,7 @@ Usage stays interactive: a person drives Claude Code and approves each order. Un
 
 ### Why not make trading part of the default product?
 
-A first-class `packages/trading/*` group in the default composition would make every `dsh` launch a trading bot. It changes default compositions that upstream also edits, which turns every upstream merge into a conflict, and it takes on full release obligations for a contract that is still changing. The opt-in experimental profile keeps the coding-agent product unchanged and isolates the trading surface.
+A first-class trading package group in the default composition would make every `dsh` launch a trading bot. It changes default compositions that upstream also edits, which turns every upstream merge into a conflict, and it takes on full release obligations for a contract that is still changing. The opt-in experimental profile keeps the coding-agent product unchanged and isolates the trading surface.
 
 ### Why not an out-of-tree plugin repository?
 

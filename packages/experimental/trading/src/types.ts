@@ -16,11 +16,8 @@ export interface TradingSymbol {
   readonly ticker: string
 }
 
-/** Every chart and bar timeframe the desk supports, shortest first. */
-export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1D', '1W'] as const
-
-/** One supported timeframe. */
-export type Timeframe = typeof TIMEFRAMES[number]
+/** One supported chart and bar timeframe; `TIMEFRAMES` lists them shortest first. */
+export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1D' | '1W'
 
 /** One OHLCV candle; `t` is the bucket start in UTC epoch milliseconds. */
 export interface Bar {

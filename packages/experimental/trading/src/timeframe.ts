@@ -3,7 +3,10 @@
  *
  * @module @deepseek-ai/dsh-experimental-trading/timeframe
  */
-import { TIMEFRAMES, type Timeframe } from './types.ts'
+import type { Timeframe } from './types.ts'
+
+/** Every chart and bar timeframe the desk supports, shortest first. */
+export const TIMEFRAMES: readonly Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1D', '1W']
 
 const INTRADAY_MS: ReadonlyMap<Timeframe, number> = new Map([
   ['1m', 60_000],
