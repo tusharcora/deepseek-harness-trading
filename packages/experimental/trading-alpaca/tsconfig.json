@@ -11,6 +11,7 @@
     { "path": "../trading" },
     { "path": "../trading-venue" },
     { "path": "../../credentials/credentials" },
+    { "path": "../../util/brand" },
     { "path": "../../util/launch-environment" },
     { "path": "../../storage/storage-domain" }
   ]

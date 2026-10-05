@@ -6314,6 +6314,9 @@ importers:
 
   packages/experimental/trading-alpaca:
     dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
       '@deepseek-ai/dsh-experimental-trading':
         specifier: workspace:^
         version: link:../trading
