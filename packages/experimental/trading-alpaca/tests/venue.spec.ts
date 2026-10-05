@@ -85,6 +85,35 @@ describe('VenueCore readiness', () => {
     expect(await venue.flatten()).toEqual([])
   })
 
+  it.each([
+    [422, { code: 40310000, message: 'configuration not allowed' }, 'Alpaca rejected the request: configuration not allowed'],
+    [401, { message: 'unauthorized' }, 'Alpaca rejected the API keys: unauthorized'],
+  ])('blocks new orders but allows exits when Alpaca refuses the safety settings with %i', async (status, body, cause) => {
+    fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { no_shorting: false, max_margin_multiplier: '4', suspend_trade: false } }))
+    fake.on('PATCH', '/v2/account/configurations', () => ({ status, body }))
+    const { venue } = core()
+    await venue.prepare()
+    expect(venue.status()).toBe('blocked')
+    expect(statuses).toEqual([['blocked', `Alpaca refused the safety settings; trading stays blocked (${cause})`]])
+    expect((await venue.closePosition(request.symbol)).side).toBe('sell')
+    await expect(venue.submitOrder(request)).rejects.toMatchObject({ code: 'blocked' })
+    expect(fake.requests.filter(r => r.method === 'POST')).toHaveLength(0)
+  })
+
+  it.each([[503, { message: 'busy' }], [429, { message: 'slow down' }]])(
+    'leaves setup to retry when the safety-settings write fails with %i',
+    async (status, body) => {
+      fake.on('GET', '/v2/account/configurations', () => ({ status: 200, body: { no_shorting: false, max_margin_multiplier: '4', suspend_trade: false } }))
+      fake.on('PATCH', '/v2/account/configurations', () => ({ status, body }))
+      const { venue } = core()
+      await expect(venue.prepare()).rejects.toMatchObject({ code: status === 429 ? 'rate-limited' : 'unavailable' })
+      expect(venue.status()).toBe('unconfigured')
+      accountConfig(fake, safe)
+      await venue.prepare()
+      expect(venue.status()).toBe('ready')
+    },
+  )
+
   it('rethrows setup failures other than blocked without changing status', async () => {
     fake.on('GET', '/v2/account/configurations', () => ({ status: 503, body: { message: 'busy' } }))
     const { venue } = core()

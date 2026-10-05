@@ -76,7 +76,8 @@ export class AccountSafety {
    * safety settings are then refused; apply the safety settings, then restore Halt from saved state or the broker's
    * suspension.
    * @returns whether the desk starts halted and why.
-   * @throws VenueError `blocked` when Alpaca does not keep the safety settings.
+   * @throws VenueError `blocked` when Alpaca refuses the safety settings (`rejected` or `auth` on the write) or does not
+   * keep them; other failures, such as an outage or a rate limit, are rethrown unchanged so setup can be retried.
    */
   start(): Promise<{ halted: boolean; reason: string }> {
     return this.exclusive(async () => {
@@ -227,7 +228,15 @@ export class AccountSafety {
   private async applySafeSettings(): Promise<AccountConfiguration> {
     const current = await this.read()
     if (current.no_shorting === SAFE.no_shorting && current.max_margin_multiplier === SAFE.max_margin_multiplier) return current
-    await this.http.request('trading', 'PATCH', PATH, { body: SAFE })
+    try {
+      await this.http.request('trading', 'PATCH', PATH, { body: SAFE })
+    } catch (error) {
+      // A refusal will not change on retry, so the account stays blocked (exits only); outages leave setup to retry.
+      if (error instanceof VenueError && (error.code === 'rejected' || error.code === 'auth')) {
+        throw new VenueError(`Alpaca refused the safety settings; trading stays blocked (${error.message})`, 'blocked', error.brokerCode)
+      }
+      throw error
+    }
     const verified = await this.read()
     if (verified.no_shorting !== SAFE.no_shorting || verified.max_margin_multiplier !== SAFE.max_margin_multiplier) {
       throw new VenueError('Alpaca did not accept no_shorting=true and max_margin_multiplier=1; trading stays blocked', 'blocked')
