@@ -27,7 +27,7 @@ beforeEach(async () => {
   server.on('connection', (socket) => {
     sockets.push(socket)
     socket.on('message', (raw) => {
-      const message = JSON.parse(String(raw)) as { action: string }
+      const message = JSON.parse((raw as Buffer).toString()) as { action: string }
       messages.push(message)
       const status = authorize ? 'authorized' : 'unauthorized'
       if (message.action === 'auth') send(socket, { stream: 'authorization', data: { status, action: 'authenticate' } })
@@ -65,15 +65,67 @@ describe('TradeUpdateStream', () => {
   })
 
   it('reconnects with backoff after the socket drops, authenticates again, and reports a gap', async () => {
+    const updates: OrderUpdate[] = []
     const gaps: string[] = []
-    const s = stream([], [], gaps)
+    const atGap: { messages: number; sockets: number }[] = []
+    const s = new TradeUpdateStream({
+      url, backoffMs: [10, 20], keys: async () => ({ keyId: 'k', secret: 's' }),
+      onEvent: (event) => {
+        if (event.kind === 'update') { updates.push(event.update); return }
+        gaps.push(event.reason)
+        atGap.push({ messages: messages.length, sockets: sockets.length })
+      },
+      onError: () => {},
+    })
     s.start()
     await until(() => messages.length === 2)
+    send(sockets[0] as ServerSocket, { stream: 'trade_updates', data: { event: 'new', order, timestamp: '2026-10-05T14:00:00Z' } })
+    await until(() => updates.length === 1)
     expect(gaps).toEqual([])
     sockets[0]?.close()
-    await until(() => sockets.length === 2 && messages.length === 4)
     await until(() => gaps.length === 1)
+    expect(atGap).toEqual([{ messages: 4, sockets: 2 }])
+    expect(messages.slice(2)).toEqual(messages.slice(0, 2))
+    send(sockets[1] as ServerSocket, { stream: 'trade_updates', data: { event: 'fill', order, timestamp: '2026-10-05T14:00:01Z' } })
+    await until(() => updates.length === 2)
     expect(gaps).toEqual(['the order-update stream reconnected; updates may have been missed'])
+    s.stop()
+  })
+
+  it('reports one disconnect per outage, not one per reconnect attempt', async () => {
+    let drops = 0
+    server.on('connection', (socket) => { if (drops > 0) { drops--; socket.terminate() } })
+    const errors: VenueError[] = []
+    const gaps: string[] = []
+    const s = stream([], errors, gaps)
+    s.start()
+    await until(() => messages.length === 2)
+    drops = 1
+    sockets[0]?.terminate()
+    await until(() => gaps.length === 1)
+    expect(sockets).toHaveLength(3)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ code: 'unavailable', message: 'the order-update stream disconnected; reconnecting' })
+    sockets[2]?.close()
+    await until(() => gaps.length === 2)
+    expect(errors.map(e => e.message)).toEqual(Array(2).fill('the order-update stream disconnected; reconnecting'))
+    s.stop()
+  })
+
+  it('reports a connect failure once while it keeps retrying', async () => {
+    const closed = new WebSocketServer({ port: 0, host: '127.0.0.1' })
+    await new Promise<void>((resolve) => { closed.on('listening', () => { resolve() }) })
+    const address = closed.address()
+    const port = typeof address === 'object' && address !== null ? address.port : 0
+    await new Promise<void>((resolve) => { closed.close(() => { resolve() }) })
+    const errors: VenueError[] = []
+    const s = new TradeUpdateStream({ url: `ws://127.0.0.1:${String(port)}`, backoffMs: [5],
+      keys: async () => ({ keyId: 'k', secret: 's' }), onEvent: () => {}, onError: (error) => { errors.push(error) } })
+    s.start()
+    await until(() => errors.length === 1)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ code: 'unavailable', message: 'the order-update stream disconnected; reconnecting' })
     s.stop()
   })
 
@@ -94,7 +146,8 @@ describe('TradeUpdateStream', () => {
   it('reports an in-stream error and a malformed update without stopping', async () => {
     const updates: OrderUpdate[] = []
     const errors: VenueError[] = []
-    const s = stream(updates, errors)
+    const gaps: string[] = []
+    const s = stream(updates, errors, gaps)
     s.start()
     await until(() => messages.length === 2)
     const socket = sockets[0] as ServerSocket
@@ -104,6 +157,8 @@ describe('TradeUpdateStream', () => {
     socket.send('{broken')
     await until(() => errors.length === 4)
     expect(errors.map(e => e.code)).toEqual(['unavailable', 'unavailable', 'unavailable', 'unavailable'])
+    expect(gaps).toEqual(['Alpaca reported a stream error; updates may have been missed',
+      'an order update could not be read; re-read orders and positions'])
     send(socket, { stream: 'trade_updates', data: { event: 'new', order, timestamp: '2026-10-05T14:00:00Z' } })
     await until(() => updates.length === 1)
     s.stop()
@@ -142,8 +197,9 @@ describe('TradeUpdateStream', () => {
     const s = new TradeUpdateStream({ url, backoffMs: [1_000], keys: async () => { throw new Error('no keys') },
       onEvent: () => {}, onError: (error) => { errors.push(error) } })
     s.start()
-    await until(() => errors.length === 1)
+    await until(() => errors.length === 2)
     expect(errors[0]).toMatchObject({ code: 'unconfigured', message: 'Alpaca keys unavailable: no keys' })
+    expect(errors[1]).toMatchObject({ code: 'unavailable', message: 'the order-update stream disconnected; reconnecting' })
     s.stop()
   })
 
@@ -159,7 +215,8 @@ describe('TradeUpdateStream', () => {
   it('ignores an unrecognised frame and reports an update without an order as malformed', async () => {
     const updates: OrderUpdate[] = []
     const errors: VenueError[] = []
-    const s = stream(updates, errors)
+    const gaps: string[] = []
+    const s = stream(updates, errors, gaps)
     s.start()
     await until(() => messages.length === 2)
     const socket = sockets[0] as ServerSocket
@@ -169,6 +226,7 @@ describe('TradeUpdateStream', () => {
     await until(() => errors.length === 1)
     expect(errors[0]).toMatchObject({ code: 'unavailable' })
     expect(errors[0]?.message).toMatch(/^Alpaca sent a malformed order update: /)
+    expect(gaps).toEqual(['an order update could not be read; re-read orders and positions'])
     send(socket, { stream: 'trade_updates', data: { event: 'new', order, timestamp: '2026-10-05T14:00:00Z' } })
     await until(() => updates.length === 1)
     expect(errors).toHaveLength(1)
@@ -184,8 +242,9 @@ describe('TradeUpdateStream', () => {
     s.start()
     await until(() => listened === 2)
     sockets[0]?.close()
-    await until(() => errors.length === 1)
-    expect(errors[0]).toMatchObject({ code: 'unavailable', message: 'gap listener failed' })
+    await until(() => errors.length === 2)
+    expect(errors[0]).toMatchObject({ code: 'unavailable', message: 'the order-update stream disconnected; reconnecting' })
+    expect(errors[1]).toMatchObject({ code: 'unavailable', message: 'gap listener failed' })
     expect(sockets).toHaveLength(2)
     s.stop()
   })

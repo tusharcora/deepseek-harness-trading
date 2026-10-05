@@ -19,7 +19,7 @@ export interface TradeUpdateStreamOptions {
   readonly keys: () => Promise<AlpacaKeys>
   /** Receives each order update and each gap after which updates may have been missed. */
   readonly onEvent: (event: OrderStreamEvent) => void
-  /** Receives stream failures; `auth` stops the stream. */
+  /** Receives stream failures, including one `unavailable` per disconnect until the stream listens again; `auth` stops the stream. */
   readonly onError: (error: VenueError) => void
 }
 
@@ -32,6 +32,8 @@ export class TradeUpdateStream {
   private attempt = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private listenedBefore = false
+  /** True from a disconnect until the next `listening`, so one outage is reported once. */
+  private outage = false
 
   private readonly lastBackoff: number
 
@@ -52,6 +54,7 @@ export class TradeUpdateStream {
     if (!this.stopped) return
     this.stopped = false
     this.listenedBefore = false
+    this.outage = false
     this.connect()
   }
 
@@ -83,6 +86,10 @@ export class TradeUpdateStream {
     socket.addEventListener('message', (event) => { this.receive(socket, event.data) })
     socket.addEventListener('close', () => {
       if (this.socket !== socket || this.stopped) return
+      if (!this.outage) {
+        this.outage = true
+        this.options.onError(new VenueError('the order-update stream disconnected; reconnecting', 'unavailable'))
+      }
       const delay = this.options.backoffMs[Math.min(this.attempt, this.lastBackoff)] as number
       this.attempt++
       this.timer = setTimeout(() => { this.timer = undefined; this.connect() }, delay)
@@ -96,7 +103,7 @@ export class TradeUpdateStream {
       const text = typeof data === 'string' ? data : decoder.decode(data as ArrayBuffer)
       const parsed: unknown = JSON.parse(text)
       if (typeof parsed !== 'object' || parsed === null) throw new Error('not an object')
-      message = parsed as typeof message
+      message = parsed
     } catch (error) {
       this.options.onError(new VenueError(`Alpaca sent a malformed stream message: ${(error as Error).message}`, 'unavailable'))
       return
@@ -113,12 +120,14 @@ export class TradeUpdateStream {
     }
     if (message.stream === 'listening') {
       this.attempt = 0
+      this.outage = false
       if (this.listenedBefore) this.emit({ kind: 'gap', reason: 'the order-update stream reconnected; updates may have been missed' })
       this.listenedBefore = true
       return
     }
     if (message.action === 'error') {
       this.options.onError(new VenueError(`Alpaca stream error: ${String(message.data?.error_message)}`, 'unavailable'))
+      this.emit({ kind: 'gap', reason: 'Alpaca reported a stream error; updates may have been missed' })
       return
     }
     if (message.stream === 'trade_updates' && message.data !== undefined) {
@@ -128,6 +137,7 @@ export class TradeUpdateStream {
       } catch (error) {
         const reason = `Alpaca sent a malformed order update: ${(error as Error).message}`
         this.options.onError(error instanceof VenueError ? error : new VenueError(reason, 'unavailable'))
+        this.emit({ kind: 'gap', reason: 'an order update could not be read; re-read orders and positions' })
         return
       }
       this.emit({ kind: 'update', update })
