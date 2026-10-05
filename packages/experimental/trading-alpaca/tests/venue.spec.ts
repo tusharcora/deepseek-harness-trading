@@ -138,6 +138,26 @@ describe('VenueCore orders and Halt', () => {
     expect(statuses.map(s => s[0])).toEqual(['ready', 'halted', 'ready'])
   })
 
+  it('sends no order when Halt arrives while the keys for its POST are still resolving', async () => {
+    const config = accountConfig(fake, safe)
+    const reached = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let holdNext = false
+    const { venue } = core(undefined, async () => {
+      if (holdNext) { holdNext = false; reached.resolve(undefined); await release.promise }
+      return { keyId: 'k', secret: 's' }
+    })
+    await venue.prepare()
+    holdNext = true
+    const submitting = venue.submitOrder(request)
+    await reached.promise
+    await venue.halt('user halt')
+    release.resolve(undefined)
+    await expect(submitting).rejects.toMatchObject({ code: 'halted', message: 'trading is halted' })
+    expect(fake.requests.filter(r => r.method === 'POST')).toHaveLength(0)
+    expect(config.suspend_trade).toBe(true)
+  })
+
   it('halts the desk even when Alpaca cannot confirm the suspension, or without keys', async () => {
     const config = accountConfig(fake, safe)
     const { venue } = core()

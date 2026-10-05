@@ -158,14 +158,16 @@ export class VenueCore {
 
   /**
    * Submit an order; refused while blocked and whenever the saved Halt flag is set, so a pending suspension never
-   * lets an order through.
+   * lets an order through. The Halt is checked again immediately before the POST, after the keys resolve, so a Halt
+   * that arrives while the request is being prepared still stops it.
    * @param request - planned order.
    * @returns the accepted order.
    */
   async submitOrder(request: BrokerOrderRequest): Promise<BrokerOrder> {
     await this.orderable()
-    if (this.safety.isHalted()) throw new VenueError('trading is halted', 'halted')
-    return orders.submitOrder(this.deps.http, request, this.deps.timing)
+    const refuseWhenHalted = (): void => { if (this.safety.isHalted()) throw new VenueError('trading is halted', 'halted') }
+    refuseWhenHalted()
+    return orders.submitOrder(this.deps.http, request, this.deps.timing, refuseWhenHalted)
   }
 
   /**

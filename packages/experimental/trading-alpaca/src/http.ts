@@ -37,6 +37,11 @@ export interface RequestOptions {
   readonly query?: Readonly<Record<string, string | number | undefined>>
   /** JSON request body. */
   readonly body?: unknown
+  /**
+   * Last check before each send, run after the keys resolve; a throw sends nothing and rejects the request with
+   * that error. Order submission uses it to re-check the Halt.
+   */
+  readonly beforeSend?: (() => void) | undefined
 }
 
 function parseJson(text: string): unknown {
@@ -89,6 +94,7 @@ export class AlpacaHttp {
     }
     for (let attempt = 0; ; attempt++) {
       const keys = await this.options.keys()
+      options.beforeSend?.()
       let response: Response
       try {
         response = await fetch(url, {

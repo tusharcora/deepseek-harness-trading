@@ -31,6 +31,16 @@ describe('AlpacaHttp', () => {
     expect(keyCalls).toBe(2)
   })
 
+  it('runs beforeSend after the keys resolve and sends nothing when it throws', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 200, body: {} }))
+    const calls: number[] = []
+    await client().request('trading', 'POST', '/v2/orders', { beforeSend: () => { calls.push(keyCalls) } })
+    expect(calls).toEqual([1])
+    const refusal = new VenueError('trading is halted', 'halted')
+    await expect(client().request('trading', 'POST', '/v2/orders', { beforeSend: () => { throw refusal } })).rejects.toBe(refusal)
+    expect(fake.requests).toHaveLength(1)
+  })
+
   it('routes data requests to the data base URL and returns undefined for empty bodies', async () => {
     fake.on('GET', '/data-root/v2/clock', () => ({ status: 204 }))
     expect(await client().request('data', 'GET', '/v2/clock')).toBeUndefined()

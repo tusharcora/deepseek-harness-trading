@@ -95,15 +95,19 @@ async function confirmTwice(http: AlpacaHttp, id: ClientOrderId, timing: OrderTi
  * @param http - REST client.
  * @param request - planned order.
  * @param timing - confirmation wait.
+ * @param beforeSend - last check run immediately before the POST is sent; a throw sends nothing and is rethrown.
  * @returns the accepted or already-existing order.
  * @throws VenueError `unknown-outcome` when Alpaca may hold the order but did not confirm it.
  */
-export async function submitOrder(http: AlpacaHttp, request: BrokerOrderRequest, timing: OrderTiming): Promise<BrokerOrder> {
+export async function submitOrder(
+  http: AlpacaHttp, request: BrokerOrderRequest, timing: OrderTiming, beforeSend?: () => void,
+): Promise<BrokerOrder> {
   let raw: RawRecord
   try {
-    raw = await http.request<RawRecord>('trading', 'POST', '/v2/orders', { body: orderBody(request) })
+    raw = await http.request<RawRecord>('trading', 'POST', '/v2/orders', { body: orderBody(request), beforeSend })
   } catch (error) {
-    // A non-VenueError comes from resolving the keys, before anything was sent.
+    // A non-VenueError comes from resolving the keys, before anything was sent; so does a `beforeSend` refusal,
+    // which carries a code (such as `halted`) that none of the branches below handles.
     if (!(error instanceof VenueError)) throw error
     if (error instanceof AcceptedUnreadableError) return confirmAccepted(http, request.clientOrderId, timing)
     if (error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
