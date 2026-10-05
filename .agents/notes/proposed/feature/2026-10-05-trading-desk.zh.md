@@ -10,7 +10,7 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 
 ## 提案
 
-第一阶段新增一个由对话驱动的交易台，作为可选启用的 `trading` profile，由七个 `packages/experimental/` 包构成。一个 agent 通过工具分析市场并提议订单——可以是应用内的 dsh agent，也可以是用户自己在交易台终端中运行、并通过 MCP 连接的 Claude Code CLI（命令行界面）；用户在审批卡片上逐笔批准订单；右侧边栏的 Trading 面板显示实时图表、agent 的成交与提议、持仓和订单。第二阶段（另一份 Agent Note）新增多 agent 交易台——分析员、策略员、风险审查员——原样复用第一阶段的工具。被委派的 subagent 以固定为 `never` 的审批策略运行（`subagent/src/child-agent.ts`），因此第二阶段只有主会话能下单；subagent 负责分析和建议。
+第一阶段新增一个由对话驱动的交易台，作为可选启用的 `trading` profile，由八个 `packages/experimental/` 包构成。一个 agent 通过工具分析市场并提议订单——可以是应用内的 dsh agent，也可以是用户自己在交易台终端中运行、并通过 MCP 连接的 Claude Code CLI（命令行界面）；用户在审批卡片上逐笔批准订单；右侧边栏的 Trading 面板显示实时图表、agent 的成交与提议、持仓和订单。第二阶段（另一份 Agent Note）新增多 agent 交易台——分析员、策略员、风险审查员——原样复用第一阶段的工具。被委派的 subagent 以固定为 `never` 的审批策略运行（`subagent/src/child-agent.ts`），因此第二阶段只有主会话能下单；subagent 负责分析和建议。
 
 已确定的决策：
 
@@ -25,17 +25,18 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 
 | 包 | 职责 | 对外提供 |
 |---|---|---|
-| `trading` | 共享类型与纯逻辑；无 I/O | `Symbol`、`Bar`、`Timeframe`、`Quote`、`Order`、`Position`、`Account` 类型；`MarketData` 与 `Broker` 服务接口；技术指标（SMA、EMA、RSI、MACD、Bollinger）；成交到 K 线的聚合；`checkRisk` |
-| `trading-alpaca` | 两个接口的 Alpaca 提供方 | 注册 `ctx.marketData` 与 `ctx.broker`；REST 历史数据与订单 API；每个资产类别共享一条 WebSocket；通过 `ctx.credentials` 读取密钥；`mode: paper \| live`，默认 `paper` |
+| `trading` | 共享类型与纯逻辑；无 I/O | `Symbol`、`Bar`、`Timeframe`、`Quote`、`Order`、`Position`、`Account` 类型；面向交易场所的类型（账户、持仓、券商订单、订单更新）；技术指标（SMA、EMA、RSI、MACD、Bollinger）；成交到 K 线的聚合；`checkRisk` |
+| `trading-venue` | 交易场所的 Service Definition | 位于 `ctx.tradingVenue` 的抽象 `TradingVenueGateway` 服务（账户、持仓、订单、资产、报价、K 线、提交、撤单、平仓、清仓、暂停、订单更新订阅）以及 `VenueError` |
+| `trading-alpaca` | 两个接口的 Alpaca 提供方 | 注册 `ctx.tradingVenue`；REST 历史数据与订单 API；每个资产类别共享一条 WebSocket；通过 `ctx.credentials` 读取密钥；`mode: paper \| live`，默认 `paper` |
 | `tool-trading` | 面向模型的工具与订单执行器 | `get_quote`、`get_bars`、`get_account`、`get_positions`、`list_orders`、`place_order`、`cancel_order`；风险检查、审批、复核、幂等提交、交易日志 |
 | `trading-gateway` | 供客户端使用的类型化远程服务 | `bars(symbol, tf, before?)`、`streamBars(symbol, tf)`、`streamAccount()`、自选列表读写、暂停/清仓 |
 | `trading-mcp` | 面向外部 agent 的 MCP 端点 | dsh 宿主上的 Streamable-HTTP MCP 服务器，通过同一个订单执行器暴露同样的七个工具；按会话签发的 bearer token |
 | `bundle-trading` | profile 组合包 | `trading` profile 补丁与 `trader` agent 预设（其 `agent.cordis.yml`） |
 | `ui-trading` | 浏览器端 | 右侧边栏 Trading 标签页；在 `tool.call.toolview` slot 中注册的交易工具视图；Trading 设置卡片 |
 
-`tool-trading` 拥有订单执行器（校验、快照、风险检查、审批、复核、提交、交易日志），并将其作为服务暴露，供自身工具与 `trading-mcp` 调用。执行器是交易工具提供的唯一券商路径；下文的「执行边界」一节说明了还存在哪些其他路径，以及它们如何被关闭或约束。领域库命名为 `trading` 而不是 `trading-core`，因为包命名规则以能力命名，其风险判定是函数 `checkRisk`。
+`tool-trading` 拥有订单执行器（校验、快照、风险检查、审批、复核、提交、交易日志），并将其作为服务暴露，供自身工具与 `trading-mcp` 调用。执行器是交易工具提供的唯一券商路径；下文的「执行边界」一节说明了还存在哪些其他路径，以及它们如何被关闭或约束。领域库命名为 `trading` 而不是 `trading-core`，因为包命名规则以能力命名，其风险判定是函数 `checkRisk`。行情数据与订单执行共用一个 Service Definition，即位于 `ctx.tradingVenue` 的 `TradingVenueGateway`，因为同一交易场所的数据 API 与订单 API 共用一个账户和一组密钥，且一个服务包只默认导出一个服务类。
 
-`bundle-trading` 中的 `trading` profile 补丁组合其余六个包，保留 Web 应用的用户终端（`terminal-controller`、`ui-sidebar-terminal`），选择 `trader` agent 预设，并在系统提示词中加入一段交易说明。`web` 是固定别名，会拒绝 `--profile`，因此交易台按 Agent Teams 的方式创建：`dsh --profile trading --from-default-profile web` 初始化 profile，`dsh plugin --profile trading add` 安装交易包；默认 profile 保持不变。`packages/api/remotes` 是发布包，不能导入 experimental 类型，因此 `ui-trading` 参照 `client-ui-agent-team`，自行组装 `trading-gateway` 命名空间及其转发事件的 Remote。工具和网关只依赖 `MarketData` 与 `Broker` 接口，因此后续的提供方（Binance、IBKR）只是一个新的提供方包，消费方无需改动。`trading` 是否拆分为类型包和风险包，遵循 [adding-a-package](../../../../docs/cookbook/adding-a-package.zh.md) 中的角色词命名规则；由实施计划决定。
+`bundle-trading` 中的 `trading` profile 补丁组合其余七个包，保留 Web 应用的用户终端（`terminal-controller`、`ui-sidebar-terminal`），选择 `trader` agent 预设，并在系统提示词中加入一段交易说明。`web` 是固定别名，会拒绝 `--profile`，因此交易台按 Agent Teams 的方式创建：`dsh --profile trading --from-default-profile web` 初始化 profile，`dsh plugin --profile trading add` 安装交易包；默认 profile 保持不变。`packages/api/remotes` 是发布包，不能导入 experimental 类型，因此 `ui-trading` 参照 `client-ui-agent-team`，自行组装 `trading-gateway` 命名空间及其转发事件的 Remote。工具和网关只依赖 `TradingVenueGateway` 服务，因此后续的提供方（Binance、IBKR）只是一个新的提供方包，消费方无需改动。`trading` 是否拆分为类型包和风险包，遵循 [adding-a-package](../../../../docs/cookbook/adding-a-package.zh.md) 中的角色词命名规则；由实施计划决定。
 
 实盘模式要求提供方配置中的 `mode: live` 与启动环境变量 `DSH_TRADING_LIVE=1` 同时存在；只有其中之一时，提供方拒绝以实盘模式启动。实盘模式在面板和每张订单卡片上持续显示红色 LIVE 徽标。
 
@@ -44,7 +45,7 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 只有当交易 agent 没有其他途径到达券商时，审批卡片才是真正的关卡。默认工具集提供了两条这样的途径：
 
 - **Shell。** 沙箱只限制文件写入；读取和网络不在沙箱策略的表达范围内（`sandbox-policy` README）。拥有 shell 的 agent 可以读取 `$DSH_HOME/.credentials.yaml`，并用 `curl` 向 Alpaca 发送订单，在 `workspace-write` 下没有任何审批步骤。
-- **运行时插件。** 随附的 `tool-cordis` 与 cordis runner 允许模型定义宿主插件，这些插件可以直接调用 `ctx.broker`，或注册一个审批应答器。
+- **运行时插件。** 随附的 `tool-cordis` 与 cordis runner 允许模型定义宿主插件，这些插件可以直接调用 `ctx.tradingVenue`，或注册一个审批应答器。
 
 第一阶段为应用内 agent 关闭这两条途径，并在券商侧约束剩余的风险：
 
@@ -59,7 +60,7 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 - 历史数据来自 Alpaca REST K 线端点（股票与加密货币端点分开），分页获取。
 - 实时数据来自每个资产类别一条 WebSocket。订阅在图表、自选列表和 agent 工具之间按引用计数共享；最后一个消费方释放时，上游订阅关闭。
 - 股票数据源可配置（`feed: iex | sip`，免费计划默认 `iex`）。界面会标注数据源，避免把 IEX 价格误认为合并行情。
-- 断线时，提供方以退避方式重连，通过 REST 回补缺口，并在收到新的报价前将该标的标记为陈旧。
+- `trading-alpaca` 负责两类 Alpaca socket：账户的成交更新 socket，以及（随 Trading 面板交付的）每个资产类别一条、订阅按引用计数共享并以退避方式重连的行情 socket。行情 socket 重连后，交易场所报告一次缺口；拥有图表 K 线序列的 `trading-gateway` 通过 REST K 线回补缺口，并在收到新的报价前将该标的标记为陈旧。
 - 技术指标与 K 线聚合是 `trading` 中的纯函数，`get_bars` 与图表都使用它们，因此 agent 与用户看到完全一致的数值。
 
 `get_bars` 返回一段摘要（最新价、区间、所请求指标的最新值、近期波段高低点），外加以紧凑表格呈现的最近 N 根 K 线，默认 100 根、上限 500 根，以限制模型上下文。
@@ -79,7 +80,7 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 5. **复核。** 审批后执行器重新快照。若预估成本偏移超过容差（默认 1%），或任一限额此时不再满足，调用以 "price moved; propose again" 拒绝。
 6. **价格上限。** 增加敞口的按数量 `market` 订单会以可立即成交的 `limit` 订单发送（加密货币 `ioc`，股票 `day`），买入价为批准价格加上偏移容差，卖出价为批准价格减去容差，从而即使订单隔夜排队，券商也会强制执行批准的名义金额。仅减仓的平仓单以真正的 `market` 订单发送，使平仓在快速行情中也能成交。`notional` 订单保持 `market`，因为名义金额本身已限制成本。普通 `stop` 触发的是价格上限无法覆盖的市价单，因此增加敞口的订单必须使用 `stop_limit`；普通 `stop` 只接受用于仅减仓的平仓。卡片会说明价格上限，或说明为何不适用。
 7. **提交**，`client_order_id` 为 dsh 会话 id 与提议 id 的哈希；提供方的调用 id 在会话之间不唯一，而 MCP 调用根本没有调用 id。订单 id 与客户端订单 id 均为品牌类型（`Branded<B>`），从不使用裸字符串。
-8. **回报。** 工具返回订单 id 与状态。成交通过账户流到达，更新图表标记和持仓面板，并记录为 `trading/fill` 会话事件。成交发生在任何工具调用之外，因此账户流处理器查找该会话的根 agent，并把成交注入该 agent 的下一次请求；注入不会唤醒空闲的 agent，因此 agent 会在用户下一条消息时看到成交。Claude Code 只能通过工具结果或调用 `list_orders` 看到成交。
+8. **回报。** 工具返回订单 id 与状态。成交通过账户流到达，更新图表标记和持仓面板，并记录为 `trading/fill` 会话事件。成交发生在任何工具调用之外，因此账户流处理器查找该会话的根 agent，并把成交注入该 agent 的下一次请求；注入不会唤醒空闲的 agent，因此 agent 会在用户下一条消息时看到成交。Claude Code 只能通过工具结果或调用 `list_orders` 看到成交。Alpaca 不会补发成交更新 socket 断开期间错过的订单更新，因此每次重连后以及流停止时，交易场所都会报告一次缺口，消费方随即重新读取未成交订单与持仓。
 
 无论会话的权限模式如何，交易工具总是询问。当审批策略为 `never`（包括 `DSH_PERMISSION_MODE=danger-full-access`）或没有可用的审批服务（无界面运行）时，`place_order` 与 `cancel_order` 被拒绝，绝不会被自动批准。`cancel_order` 需要审批，因为撤销保护性止损会增加风险。
 
@@ -205,7 +206,7 @@ Alpaca 用一个模拟盘账户和免费行情数据覆盖两种资产类别。�
 - 除非同时设置 `mode: live` 与 `DSH_TRADING_LIVE=1`，否则实盘模式拒绝启动。
 - 使用 Trading 设置中的 `trading-mcp` 命令行配置的未经修改的 `claude` CLI 可以调用每个交易工具；其 `place_order` 以来源 Claude Code（MCP）显示在「待审批」条中，在做出决定前阻塞且不会触发 Claude Code 的空闲超时，批准后产生与应用内订单相同的成交、标记和交易日志记录。没有有效会话 token 的请求被拒绝。
 - `trading` profile 中在 Trading 标签页旁提供终端标签页。
-- 全部七个包通过逐文件 100% 覆盖率门禁；profile 有真实组合测试；注册表贡献有 HMR（热模块替换）释放测试；客户端文案通过 `verify-client-ui-i18n`。
+- 全部八个包通过逐文件 100% 覆盖率门禁；profile 有真实组合测试；注册表贡献有 HMR（热模块替换）释放测试；客户端文案通过 `verify-client-ui-i18n`。
 - 一个无需密钥的快照测试，通过 trading profile 和伪造的券商提供方回放「分析 → 提议 → 批准 → 成交」会话。
 - 一个可选的 e2e 测试针对 Alpaca 模拟盘下一笔最小的加密货币订单，然后撤单或平仓；没有 `ALPACA_*` 密钥时跳过。
 
