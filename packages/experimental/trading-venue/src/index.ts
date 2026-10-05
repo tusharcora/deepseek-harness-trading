@@ -1,0 +1,172 @@
+/**
+ * Service Definition for a trading venue. One implementation provides
+ * account reads, market data, order submission, Halt, and order updates at
+ * `ctx.tradingVenue`; consumers (the order executor, the Trading panel
+ * gateway, the MCP endpoint) depend only on this class.
+ *
+ * @module @deepseek-ai/dsh-experimental-trading-venue
+ */
+import { type Context, Service } from '@deepseek-ai/cordis'
+import type {
+  AccountSnapshot, Asset, Bar, BarQuery, BrokerOrder, BrokerOrderId, BrokerOrderRequest, OrderStreamEvent,
+  PositionSnapshot, Quote, Timeframe, TradingSymbol, VenueStatus,
+} from '@deepseek-ai/dsh-experimental-trading'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    tradingVenue: TradingVenueGateway
+  }
+  interface Events {
+    /**
+     * The venue's readiness changed.
+     * @mode emit
+     * @param status - new readiness.
+     * @param reason - readable cause, such as the account setting that drifted.
+     */
+    'trading/venue-status'(status: VenueStatus, reason: string): void
+  }
+}
+
+/** Why a venue operation failed. */
+export type VenueErrorCode =
+  | 'unconfigured'
+  | 'auth'
+  | 'blocked'
+  | 'halted'
+  | 'rejected'
+  | 'not-found'
+  | 'rate-limited'
+  | 'unavailable'
+  | 'unknown-outcome'
+
+/** A venue failure with a desk-level code and, when the broker sent one, its numeric code. */
+export class VenueError extends Error {
+  override readonly name = 'VenueError'
+
+  /**
+   * @param message - readable reason shown to the model and the user.
+   * @param code - desk-level failure kind.
+   * @param brokerCode - broker's numeric error code, when present.
+   */
+  constructor(message: string, readonly code: VenueErrorCode, readonly brokerCode?: number) {
+    super(message)
+  }
+}
+
+/**
+ * A trading venue. Every method that reaches the broker resolves the API keys at call time and throws
+ * {@link VenueError} on failure. `submitOrder` refuses while the venue is `halted` or `blocked`; `closePosition`
+ * and `flatten` are reduce-only and run whenever keys exist, including while halted or blocked. `halt` never fails
+ * because the broker is unreachable: it halts the desk first and keeps retrying the broker suspension.
+ */
+export abstract class TradingVenueGateway extends Service {
+  /** @param ctx - the plugin context. */
+  constructor(ctx: Context) {
+    super(ctx, 'tradingVenue')
+  }
+
+  /**
+   * Current readiness.
+   * @returns the venue status.
+   */
+  abstract status(): VenueStatus
+
+  /**
+   * Read the account.
+   * @returns equity, cash, last equity, buying power, and whether trading is blocked.
+   */
+  abstract account(): Promise<AccountSnapshot>
+
+  /**
+   * Read open positions.
+   * @returns every open position.
+   */
+  abstract positions(): Promise<PositionSnapshot[]>
+
+  /**
+   * Read open orders.
+   * @returns every order the broker still works.
+   */
+  abstract openOrders(): Promise<BrokerOrder[]>
+
+  /**
+   * Read broker facts for one instrument.
+   * @param symbol - instrument.
+   * @returns tradability, fractional support, minimum size, and price tick.
+   */
+  abstract asset(symbol: TradingSymbol): Promise<Asset>
+
+  /**
+   * Whether the instrument's market is open now.
+   * @param symbol - instrument.
+   * @returns true during regular hours for equities, always true for crypto.
+   */
+  abstract marketOpen(symbol: TradingSymbol): Promise<boolean>
+
+  /**
+   * Read the latest quote.
+   * @param symbol - instrument.
+   * @returns best bid, best ask, and quote time.
+   */
+  abstract latestQuote(symbol: TradingSymbol): Promise<Quote>
+
+  /**
+   * Read bar history, oldest first.
+   * @param symbol - instrument.
+   * @param timeframe - bar timeframe.
+   * @param query - time range and maximum count.
+   * @returns at most `query.limit` bars, oldest first.
+   */
+  abstract bars(symbol: TradingSymbol, timeframe: Timeframe, query: BarQuery): Promise<Bar[]>
+
+  /**
+   * Submit an order. A retry with the same `clientOrderId` returns the existing order instead of creating a second one.
+   * @param request - approved, planned order.
+   * @returns the order as the broker accepted it.
+   */
+  abstract submitOrder(request: BrokerOrderRequest): Promise<BrokerOrder>
+
+  /**
+   * Cancel one open order.
+   * @param id - broker order id.
+   * @returns when the broker accepted the cancellation.
+   */
+  abstract cancelOrder(id: BrokerOrderId): Promise<void>
+
+  /**
+   * Cancel the instrument's open orders, then close the position at market; allowed while halted or blocked.
+   * @param symbol - instrument.
+   * @returns the closing order.
+   */
+  abstract closePosition(symbol: TradingSymbol): Promise<BrokerOrder>
+
+  /**
+   * Cancel every open order and close every position at market; allowed while halted or blocked.
+   * @returns the closing orders.
+   */
+  abstract flatten(): Promise<BrokerOrder[]>
+
+  /**
+   * Halt the desk now and persist it; then suspend trading at the broker, retrying until confirmed (a failed attempt
+   * leaves the suspension pending and the drift watch retries it). Works without keys and while blocked.
+   * @param reason - readable cause shown in the panel.
+   * @returns when the desk is halted; the broker suspension may still be pending.
+   */
+  abstract halt(reason: string): Promise<void>
+
+  /**
+   * Re-apply the account safety settings and lift the Halt.
+   * @returns when the broker confirmed.
+   */
+  abstract resume(): Promise<void>
+
+  /**
+   * Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the
+   * listener must re-read open orders and positions, because missed updates are not replayed.
+   * @param listener - called once per event.
+   * @returns a disposer that removes the listener.
+   */
+  abstract subscribeOrderUpdates(listener: (event: OrderStreamEvent) => void): () => void
+}
+
+export default TradingVenueGateway

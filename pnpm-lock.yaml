@@ -6312,6 +6312,16 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
+  packages/experimental/trading-venue:
+    dependencies:
+      '@deepseek-ai/dsh-experimental-trading':
+        specifier: workspace:^
+        version: link:../trading
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/experimental/webworker-packer:
     dependencies:
       '@deepseek-ai/cordis-plugin-include':
