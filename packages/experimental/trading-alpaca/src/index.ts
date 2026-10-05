@@ -81,13 +81,16 @@ export class AlpacaVenue extends TradingVenueGateway {
       safetyTiming: { suspendRetryMs: config.suspendRetryMs, sleep },
       keysPresent: async () => (await keys()) !== undefined,
       store: this.store,
-      stream: onEvent => new TradeUpdateStream({
+      stream: (onEvent, onStopped) => new TradeUpdateStream({
         url: endpoints.tradeStreamUrl, backoffMs: config.streamBackoffMs,
-        keys: requireKeys, onEvent,
+        keys: requireKeys, onEvent, onStopped,
         onError: (error) => { this.warn(error.message) },
       }),
       emitStatus: (status, reason) => { ctx.emit('trading/venue-status', status, reason) },
+      warn: this.warn,
     })
+    // New keys may be accepted where the old ones were not: restart a stream that stopped on rejected keys.
+    ctx.on('credentials/reference-updated', () => { this.core.restartStream() })
     const stopDrift = this.core.watchDrift(config.driftCheckMs, this.warn)
     ctx.effect(() => () => { stopDrift(); this.core.close() }, 'trading-alpaca teardown')
   }

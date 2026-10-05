@@ -17,28 +17,40 @@ const request: BrokerOrderRequest = { symbol: { assetClass: 'crypto', ticker: 'B
   timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>('c-1') }
 const safe: FakeAccountConfig = { no_shorting: true, max_margin_multiplier: '1', suspend_trade: false }
 
-function core(store: SafetyStateStore = { get: () => saved, set: async (state) => { saved = state } }): {
+let warnings: string[]
+
+function core(
+  store: SafetyStateStore = { get: () => saved, set: async (state) => { saved = state } },
+  keys: () => Promise<{ keyId: string; secret: string }> = async () => ({ keyId: 'k', secret: 's' }),
+): {
   venue: VenueCore
   emit: (event: OrderStreamEvent) => void
+  /** Each source's "I stopped myself" callback, in creation order. */
+  stoppers: (() => void)[]
 } {
   let deliver: (event: OrderStreamEvent) => void = () => {}
-  const http = new AlpacaHttp({ tradingUrl: fake.url, dataUrl: fake.url, timeoutMs: 2_000, retryDelaysMs: [],
-    keys: async () => ({ keyId: 'k', secret: 's' }) })
+  const stoppers: (() => void)[] = []
+  const http = new AlpacaHttp({ tradingUrl: fake.url, dataUrl: fake.url, timeoutMs: 2_000, retryDelaysMs: [], keys })
   const venue = new VenueCore({
     http, feed: 'iex', now: () => Date.UTC(2026, 9, 5),
     timing: { confirmDelayMs: 1, settleDelayMs: 1, settleChecks: 2, sleep: async () => {} },
     safetyTiming: { suspendRetryMs: [1], sleep: async () => {} },
     keysPresent: async () => keysPresent,
     store,
-    stream: (onEvent) => { deliver = onEvent; return { start: () => { streams.started++ }, stop: () => { streams.stopped++ } } },
+    stream: (onEvent, onStopped) => {
+      deliver = onEvent
+      stoppers.push(onStopped)
+      return { start: () => { streams.started++ }, stop: () => { streams.stopped++ } }
+    },
     emitStatus: (status, reason) => { statuses.push([status, reason]) },
+    warn: (message) => { warnings.push(message) },
   })
-  return { venue, emit: (event) => { deliver(event) } }
+  return { venue, emit: (event) => { deliver(event) }, stoppers }
 }
 
 beforeEach(async () => {
   fake = new FakeAlpaca(); await fake.start()
-  keysPresent = true; saved = INITIAL_SAFETY_STATE; statuses = []; streams = { started: 0, stopped: 0 }
+  keysPresent = true; saved = INITIAL_SAFETY_STATE; statuses = []; streams = { started: 0, stopped: 0 }; warnings = []
   fake.on('POST', '/v2/orders', () => ({ status: 200, body: order }))
   fake.on('DELETE', '/v2/positions/BTCUSD', () => ({ status: 200, body: { ...order, side: 'sell' } }))
   fake.on('GET', '/v2/orders', () => ({ status: 200, body: [] }))
@@ -224,6 +236,50 @@ describe('VenueCore order updates', () => {
     off2()
     expect(streams).toEqual({ started: 1, stopped: 1 })
     expect(seen).toEqual(['a:fill', 'b:fill', 'a:gap reconnected', 'b:gap reconnected'])
+  })
+})
+
+describe('VenueCore order-update fan-out and restart', () => {
+  it('delivers every update and gap to later listeners when an earlier listener throws, and reports the failure', () => {
+    const { venue, emit } = core()
+    const seen: string[] = []
+    venue.subscribeOrderUpdates(() => { throw new Error('listener broke') })
+    venue.subscribeOrderUpdates((event) => { seen.push(event.kind) })
+    emit({ kind: 'update', update: { event: 'fill', order: { id: 'o-1' } as never, t: 0 } })
+    emit({ kind: 'gap', reason: 'reconnected' })
+    expect(seen).toEqual(['update', 'gap'])
+    expect(warnings).toEqual([
+      'an order-update listener failed: listener broke', 'an order-update listener failed: listener broke',
+    ])
+  })
+
+  it('starts a new stream on the next subscribe after the stream stopped itself', () => {
+    const { venue, stoppers } = core()
+    venue.subscribeOrderUpdates(() => {})
+    stoppers[0]?.()
+    venue.subscribeOrderUpdates(() => {})
+    expect(streams).toEqual({ started: 2, stopped: 0 })
+    // A late stop report from the first source does not drop the running one.
+    stoppers[0]?.()
+    venue.subscribeOrderUpdates(() => {})
+    expect(streams).toEqual({ started: 2, stopped: 0 })
+  })
+
+  it('restarts a self-stopped stream while listeners remain, and otherwise does nothing', () => {
+    const { venue, stoppers } = core()
+    venue.restartStream()
+    expect(streams.started).toBe(0)
+    const off = venue.subscribeOrderUpdates(() => {})
+    venue.restartStream()
+    expect(streams).toEqual({ started: 1, stopped: 0 })
+    stoppers[0]?.()
+    venue.restartStream()
+    expect(streams).toEqual({ started: 2, stopped: 0 })
+    off()
+    expect(streams).toEqual({ started: 2, stopped: 1 })
+    stoppers[1]?.()
+    venue.restartStream()
+    expect(streams.started).toBe(2)
   })
 })
 

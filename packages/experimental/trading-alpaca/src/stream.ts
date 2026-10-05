@@ -21,6 +21,8 @@ export interface TradeUpdateStreamOptions {
   readonly onEvent: (event: OrderStreamEvent) => void
   /** Receives stream failures, including one `unavailable` per disconnect until the stream listens again; `auth` stops the stream. */
   readonly onError: (error: VenueError) => void
+  /** Called after the stream stopped itself (Alpaca rejected the keys) and reported the gap; `stop()` does not call it. */
+  readonly onStopped?: () => void
 }
 
 const decoder = new TextDecoder()
@@ -116,6 +118,7 @@ export class TradeUpdateStream {
       this.options.onError(new VenueError('Alpaca rejected the API keys on the trade-updates stream', 'auth'))
       this.stop()
       this.emit({ kind: 'gap', reason: 'the order-update stream stopped: Alpaca rejected the API keys' })
+      this.options.onStopped?.()
       return
     }
     if (message.stream === 'listening') {

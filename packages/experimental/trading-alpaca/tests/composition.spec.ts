@@ -35,6 +35,7 @@ let streamServer: WebSocketServer
 let streamUrl: string
 let contexts: Context[]
 let statuses: [VenueStatus, string][]
+let streamAuthorized: boolean
 
 interface BootOptions {
   /** Where the keys come from; `none` boots without keys. */
@@ -112,7 +113,7 @@ const venueOf = (ctx: Context): TradingAlpaca.AlpacaVenue => {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-trading-alpaca-composition-'))
   await mkdir(join(root, 'storages'))
-  contexts = []; statuses = []
+  contexts = []; statuses = []; streamAuthorized = true
   fake = new FakeAlpaca(); await fake.start()
   config = accountConfig(fake, { no_shorting: false, max_margin_multiplier: '4', suspend_trade: false })
   fake.on('GET', '/v2/account', () => ({ status: 200, body: { equity: '10', cash: '5', last_equity: '9', buying_power: '5' } }))
@@ -120,7 +121,8 @@ beforeEach(async () => {
   streamServer.on('connection', (socket) => {
     socket.on('message', (raw) => {
       const message = JSON.parse((raw as Buffer).toString()) as { action: string }
-      if (message.action === 'auth') socket.send(JSON.stringify({ stream: 'authorization', data: { status: 'authorized' } }))
+      const status = streamAuthorized ? 'authorized' : 'unauthorized'
+      if (message.action === 'auth') socket.send(JSON.stringify({ stream: 'authorization', data: { status } }))
       if (message.action === 'listen') {
         socket.send(JSON.stringify({ stream: 'listening', data: { streams: ['trade_updates'] } }))
         socket.send(Buffer.from(JSON.stringify({ stream: 'trade_updates', data: { event: 'fill', timestamp: '2026-10-05T14:00:00Z',
@@ -198,6 +200,20 @@ describe('trading-alpaca real composition', () => {
     const ctx2 = await boot({ keys: 'credentials' })
     expect(ctx2.get('tradingVenue')?.status()).toBe('halted')
     await vi.waitFor(() => { expect(statuses).toEqual([['halted', 'test halt']]) })
+  })
+
+  it('restarts the order-update stream when the keys change after Alpaca rejected them', async () => {
+    const ctx = await boot({ keys: 'credentials' })
+    const venue = venueOf(ctx)
+    await vi.waitFor(() => { expect(venue.status()).toBe('ready') })
+    streamAuthorized = false
+    const events: OrderStreamEvent[] = []
+    const off = venue.subscribeOrderUpdates((event) => { events.push(event) })
+    await vi.waitFor(() => { expect(events).toEqual([{ kind: 'gap', reason: 'the order-update stream stopped: Alpaca rejected the API keys' }]) })
+    streamAuthorized = true
+    await writeFile(join(root, '.credentials.yaml'), 'version: 1\nrefs:\n  ALPACA_API_KEY: k\n  ALPACA_SECRET_KEY: s2\n', { mode: 0o600 })
+    await vi.waitFor(() => { expect(events[1]).toMatchObject({ kind: 'update', update: { event: 'fill' } }) })
+    off()
   })
 
   it('resolves keys from the launch environment when no credentials provider is mounted', async () => {

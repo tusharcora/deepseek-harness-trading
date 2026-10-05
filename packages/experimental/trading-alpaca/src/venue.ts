@@ -39,10 +39,15 @@ export interface VenueCoreDeps {
   readonly keysPresent: () => Promise<boolean>
   /** Durable Halt state. */
   readonly store: SafetyStateStore
-  /** Create the order-update source that delivers to `onEvent`. */
-  readonly stream: (onEvent: (event: OrderStreamEvent) => void) => UpdateSource
+  /**
+   * Create the order-update source that delivers to `onEvent` and calls `onStopped` when it stops itself (Alpaca
+   * rejected the keys), so the venue can start a new one.
+   */
+  readonly stream: (onEvent: (event: OrderStreamEvent) => void, onStopped: () => void) => UpdateSource
   /** Publish a status change. */
   readonly emitStatus: (status: VenueStatus, reason: string) => void
+  /** Report a failure that has no caller to reject, such as a throwing order-update listener. */
+  readonly warn: (message: string) => void
 }
 
 const UNCONFIGURED = 'Alpaca keys not configured — add them in Settings → Trading'
@@ -260,10 +265,7 @@ export class VenueCore {
    */
   subscribeOrderUpdates(listener: (event: OrderStreamEvent) => void): () => void {
     this.listeners.add(listener)
-    if (this.source === undefined) {
-      this.source = this.deps.stream((event) => { for (const each of [...this.listeners]) each(event) })
-      this.source.start()
-    }
+    if (this.source === undefined) this.startSource()
     return () => {
       if (!this.listeners.delete(listener) || this.listeners.size > 0) return
       this.source?.stop()
@@ -271,11 +273,39 @@ export class VenueCore {
     }
   }
 
+  /**
+   * Start the order-update stream again when it stopped itself (Alpaca rejected the keys) while listeners remain;
+   * otherwise do nothing. Called when credentials change.
+   */
+  restartStream(): void {
+    if (this.source === undefined && this.listeners.size > 0) this.startSource()
+  }
+
   /** Stop streaming; used on dispose. */
   close(): void {
     this.listeners.clear()
     this.source?.stop()
     this.source = undefined
+  }
+
+  private startSource(): void {
+    const source: UpdateSource = this.deps.stream(
+      (event) => { this.fanOut(event) },
+      () => { if (this.source === source) this.source = undefined },
+    )
+    this.source = source
+    source.start()
+  }
+
+  /** Deliver to every listener; a throwing listener is reported and never hides the event from the others. */
+  private fanOut(event: OrderStreamEvent): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(event)
+      } catch (error) {
+        this.deps.warn(`an order-update listener failed: ${(error as Error).message}`)
+      }
+    }
   }
 
   private async runSetup(): Promise<void> {

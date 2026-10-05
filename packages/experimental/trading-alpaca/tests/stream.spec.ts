@@ -143,6 +143,26 @@ describe('TradeUpdateStream', () => {
     s.stop()
   })
 
+  it('reports that it stopped itself after the auth gap, and can be started again', async () => {
+    authorize = false
+    const order: string[] = []
+    const s = new TradeUpdateStream({
+      url, backoffMs: [10], keys: async () => ({ keyId: 'k', secret: 's' }),
+      onEvent: (event) => { order.push(event.kind) },
+      onError: (error) => { order.push(error.code) },
+      onStopped: () => { order.push('stopped') },
+    })
+    s.start()
+    await until(() => order.includes('stopped'))
+    expect(order).toEqual(['auth', 'gap', 'stopped'])
+    authorize = true
+    s.start()
+    await until(() => messages.length === 3)
+    expect(messages.at(-1)).toEqual({ action: 'listen', data: { streams: ['trade_updates'] } })
+    s.stop()
+    expect(order).toEqual(['auth', 'gap', 'stopped'])
+  })
+
   it('reports an in-stream error and a malformed update without stopping', async () => {
     const updates: OrderUpdate[] = []
     const errors: VenueError[] = []
