@@ -2847,7 +2847,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract submitOrder(request: BrokerOrderRequest): Promise<BrokerOrder>',
-        description: 'Submit an order. A retry with the same `clientOrderId` returns the existing order instead of creating a second one.',
+        description: 'Submit an order. A retry with the same `clientOrderId` returns the existing order instead of creating a second one. Refused while halted or blocked, including a Halt that arrives while the order is still being prepared.',
         parameters: [{ name: 'request', description: 'approved, planned order.' }],
         returns: 'the order as the broker accepted it.',
       },
@@ -2859,7 +2859,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract closePosition(symbol: TradingSymbol): Promise<BrokerOrder>',
-        description: 'Cancel the instrument\'s open orders, then close the position at market; allowed while halted or blocked. Throws VenueError with code `not-found` when there is no position for the instrument.',
+        description: 'Cancel the instrument\'s open orders, then close the position at market; allowed while halted or blocked. Throws VenueError with code `not-found` when there is no position for the instrument; the instrument\'s open orders are cancelled even then.',
         parameters: [{ name: 'symbol', description: 'instrument.' }],
         returns: 'the closing order.',
       },
@@ -2877,13 +2877,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract resume(): Promise<void>',
-        description: 'Re-apply the account safety settings and lift the Halt.',
+        description: 'Re-apply the account safety settings and lift the Halt. Refuses with VenueError while the venue is `unconfigured` or `blocked`. It may resolve with the desk still halted: a Halt requested after the resume began wins. Check TradingVenueGateway.status once it resolves.',
         parameters: [],
-        returns: 'when the broker confirmed.',
+        returns: 'when the broker and the saved Halt state agree; the desk is running or, when a later Halt won, halted.',
       },
       {
         signature: 'abstract subscribeOrderUpdates(listener: (event: OrderStreamEvent) => void): () => void',
-        description: 'Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the listener must re-read open orders and positions, because missed updates are not replayed. A gap is delivered only after the stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or once when the stream stops for good.',
+        description: 'Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the listener must re-read open orders and positions, because missed updates are not replayed. A gap is delivered only after the stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or once when the stream stops for good. A listener that throws does not keep an event from the other listeners.',
         parameters: [{ name: 'listener', description: 'called once per event.' }],
         returns: 'a disposer that removes the listener.',
       },

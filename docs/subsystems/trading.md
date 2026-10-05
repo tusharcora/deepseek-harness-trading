@@ -75,6 +75,7 @@ abstract bars(symbol: TradingSymbol, timeframe: Timeframe, query: BarQuery): Pro
 
 /**
  * Submit an order. A retry with the same `clientOrderId` returns the existing order instead of creating a second one.
+ * Refused while halted or blocked, including a Halt that arrives while the order is still being prepared.
  * @param request - approved, planned order.
  * @returns the order as the broker accepted it.
  */
@@ -89,7 +90,8 @@ abstract cancelOrder(id: BrokerOrderId): Promise<void>
 
 /**
  * Cancel the instrument's open orders, then close the position at market; allowed while halted or blocked. Throws
- * {@link VenueError} with code `not-found` when there is no position for the instrument.
+ * {@link VenueError} with code `not-found` when there is no position for the instrument; the instrument's open orders
+ * are cancelled even then.
  * @param symbol - instrument.
  * @returns the closing order.
  */
@@ -112,8 +114,10 @@ abstract flatten(): Promise<BrokerOrder[]>
 abstract halt(reason: string): Promise<void>
 
 /**
- * Re-apply the account safety settings and lift the Halt.
- * @returns when the broker confirmed.
+ * Re-apply the account safety settings and lift the Halt. Refuses with {@link VenueError} while the venue is
+ * `unconfigured` or `blocked`. It may resolve with the desk still halted: a Halt requested after the resume began
+ * wins. Check {@link TradingVenueGateway.status} once it resolves.
+ * @returns when the broker and the saved Halt state agree; the desk is running or, when a later Halt won, halted.
  */
 abstract resume(): Promise<void>
 
@@ -121,7 +125,7 @@ abstract resume(): Promise<void>
  * Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the
  * listener must re-read open orders and positions, because missed updates are not replayed. A gap is delivered only
  * after the stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or
- * once when the stream stops for good.
+ * once when the stream stops for good. A listener that throws does not keep an event from the other listeners.
  * @param listener - called once per event.
  * @returns a disposer that removes the listener.
  */

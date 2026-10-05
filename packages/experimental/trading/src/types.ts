@@ -235,7 +235,11 @@ export type OrderStreamEvent =
   | { readonly kind: 'update'; readonly update: OrderUpdate }
   | { readonly kind: 'gap'; readonly reason: string }
 
-/** Venue readiness: no keys, ready, halted by the user or by drift, or blocked because the account cannot be made safe. */
+/**
+ * Venue readiness. `unconfigured`: the API keys are missing or setup has not completed yet. `ready`: setup verified
+ * the account safety settings. `halted`: halted by the user or by drift. `blocked`: the account cannot be made safe,
+ * or the broker refused the safety settings; exits still run, new orders and resume are refused.
+ */
 export type VenueStatus = 'unconfigured' | 'ready' | 'halted' | 'blocked'
 
 /** Bar history request; without `start` the venue returns the most recent `limit` bars ending at `end` (default now). */

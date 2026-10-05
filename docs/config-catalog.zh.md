@@ -843,7 +843,7 @@ export interface Config {
   streamBackoffMs: number[]
   /** Waits before retrying an unconfirmed broker suspension during Halt; one retry per entry. */
   suspendRetryMs: number[]
-  /** Wait before the second confirming lookup after an order submission failed in transit, milliseconds. */
+  /** Wait before the second confirming lookup after an order submission failed in transit or hit a used client order id, milliseconds. */
   lookupConfirmMs: number
   /** Wait between checks that a symbol's cancelled orders are gone before closing its position, milliseconds. */
   closeSettleMs: number

@@ -49,7 +49,7 @@ Every method that reaches the broker resolves the API keys at call time and thro
 
 | Method | Behavior |
 |---|---|
-| `status()` | Current readiness: `unconfigured`, `ready`, `halted`, or `blocked`. |
+| `status()` | Current readiness: `unconfigured` (keys missing or setup not yet completed), `ready`, `halted`, or `blocked` (the account cannot be made safe, or the broker refused the safety settings). |
 | `account()` | Equity, cash, last equity, buying power, and whether trading is blocked at the broker. |
 | `positions()` | Every open position. |
 | `openOrders()` | Every order the broker still works. |
@@ -57,13 +57,13 @@ Every method that reaches the broker resolves the API keys at call time and thro
 | `marketOpen(symbol)` | Whether the instrument's market is open now; always true for crypto. |
 | `latestQuote(symbol)` | Best bid, best ask, and quote time. |
 | `bars(symbol, timeframe, query)` | At most `query.limit` bars, oldest first. |
-| `submitOrder(request)` | Submits an order; a retry with the same `clientOrderId` returns the existing order instead of creating a second one. Refused while `halted` or `blocked`. |
+| `submitOrder(request)` | Submits an order; a retry with the same `clientOrderId` returns the existing order instead of creating a second one. Refused while `halted` or `blocked`, including a Halt that arrives while the order is still being prepared. |
 | `cancelOrder(id)` | Cancels one open order. |
-| `closePosition(symbol)` | Cancels the instrument's open orders, then closes the position at market; runs while halted or blocked. `not-found` when there is no position. |
+| `closePosition(symbol)` | Cancels the instrument's open orders, then closes the position at market; runs while halted or blocked. `not-found` when there is no position; the open orders are cancelled even then. |
 | `flatten()` | Cancels every open order, then attempts to close every position; runs while halted or blocked. Throws `rejected` naming every instrument that failed to close; the closes that succeeded stand. |
 | `halt(reason)` | Halts the desk now and persists the Halt, then suspends trading at the broker with retries. Works without keys and while blocked; resolves once the desk is halted even when the broker suspension is still pending. |
-| `resume()` | Re-applies the account safety settings and lifts the Halt. |
-| `subscribeOrderUpdates(listener)` | Delivers order updates and gaps; returns a disposer. The venue streams only while at least one listener is registered. |
+| `resume()` | Re-applies the account safety settings and lifts the Halt. Refuses while `unconfigured` or `blocked`. It may resolve with the desk still halted, because a Halt requested after the resume began wins; check `status()` once it resolves. |
+| `subscribeOrderUpdates(listener)` | Delivers order updates and gaps; returns a disposer. The venue streams only while at least one listener is registered. A listener that throws does not keep an event from the other listeners. |
 
 After a `gap` event the listener re-reads open orders and positions, because missed updates are not replayed. A gap is delivered only after the stream is listening again, so a re-read made after it cannot miss updates, or once when the stream stops for good.
 
@@ -73,9 +73,9 @@ After a `gap` event the listener re-reads open orders and positions, because mis
 
 | Code | When it occurs |
 |---|---|
-| `unconfigured` | The API keys are not configured. |
+| `unconfigured` | The API keys are not configured, or setup has not completed yet. |
 | `auth` | The broker rejected the API keys. |
-| `blocked` | The account could not be made safe (the provider's safety settings were not kept); orders and resume are refused. |
+| `blocked` | The account could not be made safe: the broker refused the provider's safety settings or did not keep them. Orders and resume are refused; exits still run. |
 | `halted` | `submitOrder` was called while the desk is halted. |
 | `rejected` | The broker refused the request, or `flatten` could not close one or more positions. |
 | `not-found` | The order, position, asset, or quote does not exist. |
