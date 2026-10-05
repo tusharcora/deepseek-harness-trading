@@ -1,0 +1,23 @@
+# Trading Desk Implementation Roadmap
+
+**Spec:** `.agents/notes/proposed/feature/2026-10-05-trading-desk.md` (read it before any plan).
+
+The spec covers seven packages across five subsystems. Each plan below ends in working, tested software and is written in full only when the previous plan has merged, so it can cite real signatures instead of guessed ones.
+
+| # | Plan | Packages | Ends with | Status |
+|---|---|---|---|---|
+| 1 | Trading domain library | `trading` (spec name `trading-core`), Chinese note pair | Pure, 100%-covered library: types, symbol parsing, indicators, candle building, order validation, risk policy, submission planning | Written: [01-trading-domain.md](01-trading-domain.md) |
+| 2 | Alpaca provider | `trading-alpaca` | `ctx.marketData` and `ctx.broker` against a fake Alpaca HTTP/WebSocket server; account configuration set, verified, and drift-checked; shared reference-counted streams with REST backfill; unknown-outcome lookup by `client_order_id` | Next |
+| 3 | Order executor, tools, profile | `tool-trading`, `bundle-trading` | In-app `trader` agent trades end to end on paper through the generic approval UI: proposal ids, two locked sections with reservations, fail-closed tool body, Halt guard, flatten window, journal, fills injected into the root agent, tool allowlist with a `tool-schemas.expected.json` snapshot, `mcp-resources` row disabled, configured preset root with `default: trader` failing loudly on an unknown saved default, keyless recorded-session snapshot | — |
+| 4 | Gateway and Trading panel | `trading-gateway`, `ui-trading` | Trading sidebar tab with lightweight-charts, overlays, watchlist, positions/orders/journal tabs, trading approval composer entry, tool views, settings card, client-owned Remote assembly, en/zh locale dictionaries | — |
+| 5 | Claude Code over MCP | `trading-mcp` | Streamable-HTTP MCP endpoint with per-session tokens, trading-owned approval queue, immediate SSE stream plus 30-second progress, de-duplicated pending proposals, Pending approvals strip, Connect Claude Code settings row | — |
+
+## Notes carried from spec review into later plans
+
+- **Plan 2:** adds the `MarketData` and `Broker` service interfaces to the `trading` library alongside their first implementation, so the interfaces are written against real Alpaca behavior instead of guessed.
+- **Plan 2:** the drift check treats `suspend_trade: false` as expected while a journaled flatten window is open; any other drift halts.
+- **Plan 3:** `mcp-resources` is a base-bundle profile row; disable it in the `trading` profile and pin the `trader` agent's exact tool list with a `tool-schemas.expected.json` snapshot, as the minimal preset does.
+- **Plan 3:** with `includeShippedRoot` and `includeUserRoot` false, the profile patch adds a configured preset root pointing at `bundle-trading`'s presets and sets `default: trader`; a saved default naming any other preset fails at load with an error naming it.
+- **Plan 3:** fills arrive outside any tool call, so the account-stream handler resolves the session's root agent by session id; injection does not wake an idle agent.
+- **Plan 3:** `client_order_id` = SHA-256 of `sessionId + ':' + proposalId`, truncated to Alpaca's 48-character limit; it uses `node:crypto` and therefore lives in `tool-trading`, not in the browser-safe `trading` library.
+- **Plan 5:** Claude Code sees fills only in a tool result or through `list_orders`.
