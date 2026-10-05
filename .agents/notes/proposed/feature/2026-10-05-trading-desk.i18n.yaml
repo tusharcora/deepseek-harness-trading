@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-05-trading-desk.md
-2026-10-05-trading-desk.md: ea83d82b533bd41e1bdc18728a8909521d738130
-2026-10-05-trading-desk.zh.md: e58a5a1a802a43e5a487c8ba723aeb752516ad1a
+2026-10-05-trading-desk.md: 58790935a6466c962c6debae657982f653077fc8
+2026-10-05-trading-desk.zh.md: eb61550d7720af64cbc73c5ca143c252e3a9ad3f

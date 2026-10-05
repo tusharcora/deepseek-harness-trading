@@ -2,7 +2,7 @@
 
 **Spec:** `.agents/notes/proposed/feature/2026-10-05-trading-desk.md` (read it before any plan).
 
-The spec covers seven packages across five subsystems. Each plan below ends in working, tested software and is written in full only when the previous plan has merged, so it can cite real signatures instead of guessed ones.
+The spec covers eight packages across five subsystems. Each plan below ends in working, tested software and is written in full only when the previous plan has merged, so it can cite real signatures instead of guessed ones.
 
 | # | Plan | Packages | Ends with | Status |
 |---|---|---|---|---|

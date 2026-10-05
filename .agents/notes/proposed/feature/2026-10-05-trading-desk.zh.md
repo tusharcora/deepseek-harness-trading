@@ -27,7 +27,7 @@ DeepSeek Harness 的 agent（智能体）能够读取、编写和运行代码，
 |---|---|---|
 | `trading` | 共享类型与纯逻辑；无 I/O | `Symbol`、`Bar`、`Timeframe`、`Quote`、`Order`、`Position`、`Account` 类型；面向交易场所的类型（账户、持仓、券商订单、订单更新）；技术指标（SMA、EMA、RSI、MACD、Bollinger）；成交到 K 线的聚合；`checkRisk` |
 | `trading-venue` | 交易场所的 Service Definition | 位于 `ctx.tradingVenue` 的抽象 `TradingVenueGateway` 服务（账户、持仓、订单、资产、报价、K 线、提交、撤单、平仓、清仓、暂停、订单更新订阅）以及 `VenueError` |
-| `trading-alpaca` | 两个接口的 Alpaca 提供方 | 注册 `ctx.tradingVenue`；REST 历史数据与订单 API；每个资产类别共享一条 WebSocket；通过 `ctx.credentials` 读取密钥；`mode: paper \| live`，默认 `paper` |
+| `trading-alpaca` | 交易场所的 Alpaca 提供方 | 注册 `ctx.tradingVenue`；REST 历史数据与订单 API；每个资产类别共享一条 WebSocket；通过 `ctx.credentials` 读取密钥；`mode: paper \| live`，默认 `paper` |
 | `tool-trading` | 面向模型的工具与订单执行器 | `get_quote`、`get_bars`、`get_account`、`get_positions`、`list_orders`、`place_order`、`cancel_order`；风险检查、审批、复核、幂等提交、交易日志 |
 | `trading-gateway` | 供客户端使用的类型化远程服务 | `bars(symbol, tf, before?)`、`streamBars(symbol, tf)`、`streamAccount()`、自选列表读写、暂停/清仓 |
 | `trading-mcp` | 面向外部 agent 的 MCP 端点 | dsh 宿主上的 Streamable-HTTP MCP 服务器，通过同一个订单执行器暴露同样的七个工具；按会话签发的 bearer token |
