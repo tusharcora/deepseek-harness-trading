@@ -146,6 +146,7 @@
   "references": [
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
+    { "path": "./packages/experimental/trading" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },
     { "path": "./packages/experimental/browser-use-chrome-devtools-mcp" },
     { "path": "./packages/experimental/browser-use-stagehand-native" },
