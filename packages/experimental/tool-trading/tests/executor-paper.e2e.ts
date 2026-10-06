@@ -2,13 +2,14 @@
  * Opt-in Alpaca paper e2e for the executor. Needs DSH_ALPACA_PAPER_E2E=1 plus ALPACA_API_KEY / ALPACA_SECRET_KEY of a
  * paper account; the e2e config also loads the repository root `.env`, so keys placed there count. Effects on that
  * account: the venue sets no_shorting=true and max_margin_multiplier=1 (they stay set); the test buys about $12 of
- * BTC/USD through place_order (sent as a capped IOC limit, above Alpaca's $10 crypto minimum), waits for the fill
- * notice, and sells the position through place_order (a reduce-only market exit, retried while Alpaca releases the
- * coins). It refuses to run when the venue is not on the paper account, or when the account already holds BTC/USD or
- * has open BTC/USD orders. The session id is unique to the run, so the client order ids the executor derives from it
- * are too; cleanup cancels only open orders carrying one of this run's client order ids and, once the clean-account
- * check passed, closes any BTC/USD left. Cleanup is best-effort: a failed run can leave a tiny BTC/USD position or
- * order. The test is not retried.
+ * BTC/USD through place_order (sent as a capped IOC limit, above Alpaca's $10 crypto minimum), waits until it is
+ * filled (an order can fill in several parts, each with its own notice), and sells the position through place_order
+ * (a reduce-only market exit, retried while Alpaca releases the coins), again waiting until filled. It refuses to run
+ * when the venue is not on the paper account, or when the account already holds BTC/USD or has open BTC/USD orders.
+ * The session id is unique to the run, so the client order ids the executor derives from it are too; cleanup cancels
+ * only open orders carrying one of this run's client order ids and, once the clean-account check passed, closes any
+ * BTC/USD left. Cleanup is best-effort: a failed run can leave a tiny BTC/USD position or order. The test is not
+ * retried.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -69,6 +70,27 @@ async function runCleanup(steps: readonly (() => Promise<void>)[]): Promise<stri
   return failures
 }
 
+/**
+ * Wait until the `index`-th order sent in `session` is filled, then check its fills. One order can fill in several
+ * parts, each recorded as its own `trading/fill` and notice, so completion is read from the fills, not counted notices.
+ * @param session - this run's session.
+ * @param index - position of the order among the session's `trading/order` events.
+ * @param qty - quantity the order asked for.
+ */
+async function waitFilled(session: Session, index: number, qty: number): Promise<void> {
+  const fills = () => {
+    const orderId = session.snapshotEvents().filter(e => e.type === 'trading/order')[index]?.data.orderId
+    return session.snapshotEvents().filter(e => e.type === 'trading/fill').map(e => e.data).filter(f => f.orderId === orderId)
+  }
+  await vi.waitFor(() => { expect(fills().at(-1)?.status).toBe('filled') }, { timeout: 60_000, interval: 500 })
+  const recorded = fills()
+  const last = recorded.at(-1)
+  if (last === undefined) throw new Error('no fill recorded')
+  // Each fill adds exactly the growth in filled quantity, so the parts sum to the order's filled quantity.
+  expect(recorded.reduce((sum, f) => sum + f.fillQty, 0)).toBeCloseTo(last.filledQty, 9)
+  expect(last.filledQty).toBeCloseTo(qty, 9)
+}
+
 describe.skipIf(!enabled)('executor on Alpaca paper', { retry: 0 }, () => {
   it('buys and sells BTC/USD through place_order with approval, and reports both fills', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-tool-trading-paper-'))
@@ -124,7 +146,9 @@ describe.skipIf(!enabled)('executor on Alpaca paper', { retry: 0 }, () => {
       })
       const bought = await order('buy-1', 'buy', qty)
       expect(bought.isError, JSON.stringify(bought.content)).toBe(false)
-      await vi.waitFor(() => { expect(injected).toHaveLength(1) }, { timeout: 60_000, interval: 500 })
+      await waitFilled(own, 0, qty)
+      const buyNotices = injected.length
+      expect(buyNotices).toBeGreaterThanOrEqual(1)
       // Alpaca shows the filled position before its coins are sellable: qty_available stays 0 for a moment.
       let held = 0
       for (let i = 0; i < 30 && held <= 0; i++) {
@@ -134,7 +158,8 @@ describe.skipIf(!enabled)('executor on Alpaca paper', { retry: 0 }, () => {
       expect(held).toBeGreaterThan(0)
       const sold = await order('sell-1', 'sell', held)
       expect(sold.isError, JSON.stringify(sold.content)).toBe(false)
-      await vi.waitFor(() => { expect(injected).toHaveLength(2) }, { timeout: 60_000, interval: 500 })
+      await waitFilled(own, 1, held)
+      expect(injected.length).toBeGreaterThan(buyNotices)
       const outcomes = own.snapshotEvents().filter(e => e.type === 'trading/order').map(e => e.data.outcome)
       expect(outcomes).toEqual(['submitted', 'submitted'])
     } catch (error) {
