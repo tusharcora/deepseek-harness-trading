@@ -2,7 +2,7 @@
  * The trading order executor at `ctx.tradingExecutor`: the only broker path the trading tools offer. A proposal is
  * validated, checked against the limits and reserved under the account lock, journaled, and recorded as
  * `trading/proposal`; the user is asked; after an `allowed-once` decision it is re-checked and submitted under the lock
- * again. The in-app tools and the MCP endpoint call the same methods in the same order.
+ * again. The in-app tools call these methods; `proposeOrder` and `proposeCancel` also serve the planned MCP endpoint.
  *
  * @module @deepseek-ai/dsh-experimental-tool-trading/executor
  */
@@ -150,7 +150,9 @@ export class TradingExecutor extends Service {
       const sessionId = exec.agent?.session.id
       if (!ORDER_TOOLS.has(exec.name) || sessionId === undefined) return
       const settled = this.book.settleCall(sessionId, exec.callId)
-      if (settled !== undefined) this.journalLater(settled.proposal.proposalId, { status: 'rejected', note: 'not sent' })
+      if (settled === undefined) return
+      const note = ctx.tradingVenue.status() === 'halted' ? 'not sent: trading is halted' : 'not sent'
+      this.journalLater(settled.proposal.proposalId, { status: 'rejected', note })
     })
   }
 
@@ -417,7 +419,7 @@ export class TradingExecutor extends Service {
    * not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs
    * without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed
    * for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker
-   * until then); nothing is resubmitted.
+   * until then); nothing is resubmitted. A failed lookup leaves that order in flight for the next pass.
    * @returns when every in-flight order was checked.
    */
   async reconcile(): Promise<void> {
@@ -427,8 +429,12 @@ export class TradingExecutor extends Service {
     const venue = this.ctx.tradingVenue
     const open = new Map<ClientOrderId, BrokerOrder>((await venue.openOrders()).map(order => [order.clientOrderId, order]))
     for (const entry of inFlight) {
-      const order = open.get(entry.clientOrderId) ?? await venue.order(entry.clientOrderId)
-      await this.updates.run(() => order === undefined ? this.markNotPlaced(journal, entry) : this.foldOrder(order))
+      try {
+        const order = open.get(entry.clientOrderId) ?? await venue.order(entry.clientOrderId)
+        await this.updates.run(() => order === undefined ? this.markNotPlaced(journal, entry) : this.foldOrder(order))
+      } catch (error) {
+        this.warn(`could not reconcile ${entry.proposalId}: ${(error as Error).message}`)
+      }
     }
   }
 
@@ -484,10 +490,13 @@ export class TradingExecutor extends Service {
         }
         const plan = planOrder(proposal.order, proposal.referencePrice, tolerance, recheck.reduceOnly, proposal.priceIncrement)
         const request = brokerRequest(proposal.order, plan, clientOrderIdFor(sessionId, proposal.proposalId))
+        // In flight from here: after a restart that cuts the submission short, reconciliation looks the order up.
+        await this.updates.run(() => journal.update(proposal.proposalId, { status: 'unknown' }, Date.now()))
         return { order: await this.send(request, recheck.reduceOnly), capped: plan.capped }
       })
     } catch (error) {
       const failure = failureOf(error)
+      if (failure.outcome === 'unknown') this.warn(`outcome of ${proposal.proposalId} unknown: ${(error as Error).message}`)
       await this.updates.run(() => this.recordFailure(journal, proposal.proposalId, failure.outcome, failure.message))
       this.recordOrder(sessionId, { proposalId: proposal.proposalId, outcome: failure.outcome, message: failure.message })
       throw new Error(failure.message)
@@ -537,7 +546,8 @@ export class TradingExecutor extends Service {
    * Fold one broker view of a desk order into the journal. The submit result, every stream update, and every
    * reconciliation lookup go through here, serialized on `updates`: status only moves forward, a broker final status
    * (`filled`, `canceled`, `expired`, `rejected`) is never replaced, the filled quantity only grows, and only its growth
-   * is reported, so each filled quantity produces exactly one `trading/fill` and one notice.
+   * is reported, so each filled quantity produces exactly one `trading/fill` and one notice. A broker view that moves an
+   * entry off `failed` or `unknown` removes the failure note.
    */
   private async foldOrder(order: BrokerOrder, update?: OrderUpdate): Promise<void> {
     const journal = await this.journalReady.promise
@@ -548,9 +558,10 @@ export class TradingExecutor extends Service {
     const filledQty = finite(order.filledQty) ? Math.max(order.filledQty, entry.filledQty) : entry.filledQty
     const delta = filledQty - entry.filledQty
     if (delta <= 0 && status === entry.status && order.id === entry.orderId) return
+    const corrected = status !== entry.status && (entry.status === 'failed' || entry.status === 'unknown')
     const next = await journal.update(entry.proposalId, compact<JournalPatch>({
       status, orderId: order.id, filledQty, filledAvgPrice: finite(order.filledAvgPrice) ? order.filledAvgPrice : entry.filledAvgPrice,
-      note: undefined,
+      note: corrected ? null : undefined,
     }), Date.now())
     if (delta > 0) await this.reportFill(next, order, delta, update)
   }
@@ -612,7 +623,7 @@ export class TradingExecutor extends Service {
         this.book.markLogged(sessionId, event.data.proposalId)
         break
       case 'approval/asked':
-        this.book.linkApproval(sessionId, event.data.callId, event.data.id)
+        if (ORDER_TOOLS.has(event.data.toolName)) this.book.linkApproval(sessionId, event.data.callId, event.data.id)
         break
       case 'approval/decided': {
         const settled = this.book.decide(event.data.id, event.data.outcome)

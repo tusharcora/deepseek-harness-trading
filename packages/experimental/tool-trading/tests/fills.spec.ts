@@ -222,6 +222,44 @@ describe('fills from the order stream', () => {
     expect(desk.events('trading/fill')).toHaveLength(1)
     expect(desk.injected).toHaveLength(1)
     expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'filled', filledQty: 0.0002 })
+    expect((await desk.executor.orders()).today[0]).not.toHaveProperty('note')
+  })
+
+  it('clears the not-placed note when the broker later reports the order', async () => {
+    desk = await bootDesk()
+    let request: BrokerOrderRequest | undefined
+    desk.venue.respond = (sent) => {
+      request = sent
+      throw new VenueError('Alpaca did not confirm order', 'unknown-outcome')
+    }
+    await expect(placed()).rejects.toThrow('the order outcome is unknown')
+    if (request === undefined) throw new Error('nothing was submitted')
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 7_200_000 + 1_000)
+    await desk.executor.reconcile()
+    vi.mocked(Date.now).mockRestore()
+    expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'failed' })
+    desk.venue.emit({ kind: 'update', update: { event: 'new', order: acceptedOrder(request), t: 3 } })
+    await vi.waitFor(async () => { expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'submitted' }) })
+    expect((await desk.executor.orders()).today[0]).not.toHaveProperty('note')
+  })
+
+  it('keeps reconciling the other orders when one lookup fails', async () => {
+    desk = await bootDesk()
+    const first = await placed(0.0002, 'call-1')
+    const second = await placed(0.0003, 'call-2')
+    desk.venue.known.set(first.request.clientOrderId, filledOrder(first))
+    desk.venue.known.set(second.request.clientOrderId, filledOrder(second, 0.0003))
+    let failed: ClientOrderId | undefined
+    vi.spyOn(desk.venue, 'order').mockImplementationOnce(async (id) => {
+      failed = id
+      throw new VenueError('Alpaca is unavailable', 'unavailable')
+    })
+    await expect(desk.executor.reconcile()).resolves.toBeUndefined()
+    const statuses = new Map((await desk.executor.orders()).today.map(row => [row.proposalId, row.status]))
+    const [stuck, folded] = failed === first.request.clientOrderId ? [first, second] : [second, first]
+    expect(statuses.get(stuck.proposalId)).toBe('submitted')
+    expect(statuses.get(folded.proposalId)).toBe('filled')
+    expect(desk.events('trading/fill')).toHaveLength(1)
   })
 
   it('never marks an order the broker already reported as not placed', async () => {
@@ -245,6 +283,42 @@ describe('fills after a restart and without a live agent', () => {
       await vi.waitFor(async () => { expect((await desk.executor.orders()).today[0]?.status).toBe('filled') })
       await vi.waitFor(() => { expect(desk.injected).toHaveLength(1) })
       expect(desk.events('trading/fill')).toHaveLength(1)
+    } finally {
+      await desk.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('finds an order the broker accepted before a restart cut its submission short, and reports its fill once', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-tool-trading-restart-'))
+    try {
+      desk = await bootDesk({ root })
+      let sent: BrokerOrderRequest | undefined
+      // The broker accepts the order; the process stops before the response arrives.
+      vi.spyOn(desk.venue, 'submitOrder').mockImplementation(async (request) => {
+        sent = request
+        return new Promise<never>(() => {})
+      })
+      const result = await desk.executor.proposeOrder(
+        { order: { symbol: btc, side: 'buy', qty: 0.0002, type: 'market', timeInForce: 'gtc' }, rationale: 'Restart test.' },
+        { session: desk.session, source: 'dsh-agent', callId: ToolCallId('call-1') },
+      )
+      if (result.kind !== 'pending') throw new Error(`expected pending, got ${result.kind}`)
+      const id = ApprovalRequestId('approval-call-1')
+      desk.session.append('approval/asked', { id, toolName: 'place_order', callId: ToolCallId('call-1') })
+      desk.session.append('approval/decided', { id, outcome: 'allowed-once' })
+      void desk.executor.execute(result.proposalId, desk.session.id)
+      await vi.waitFor(() => { expect(sent).toBeDefined() })
+      await desk.close()
+      if (sent === undefined) throw new Error('nothing was submitted')
+      const accepted = sent
+      const filled = acceptedOrder(accepted, { filledQty: 0.0002, filledAvgPrice: 62_831.5, status: 'filled' })
+      desk = await bootDesk({ root, prepare: (venue) => { venue.known.set(accepted.clientOrderId, filled) } })
+      await vi.waitFor(async () => { expect((await desk.executor.orders()).today[0]?.status).toBe('filled') })
+      await vi.waitFor(() => { expect(desk.injected).toHaveLength(1) })
+      await desk.executor.reconcile()
+      expect(desk.events('trading/fill')).toHaveLength(1)
+      expect(desk.venue.submitted).toEqual([])
     } finally {
       await desk.close()
       await rm(root, { recursive: true, force: true })

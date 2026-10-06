@@ -50,7 +50,8 @@ export interface JournalPatch {
   readonly orderId?: BrokerOrderId
   readonly filledQty?: number
   readonly filledAvgPrice?: number
-  readonly note?: string
+  /** New note; `null` removes the entry's note. */
+  readonly note?: string | null
 }
 
 /** A journaled order whose broker state is not final yet. */
@@ -100,12 +101,16 @@ export class Journal {
   /**
    * Change an entry's lifecycle fields.
    * @param id - proposal id.
-   * @param patch - fields to change.
+   * @param patch - fields to change; a `null` note removes the note.
    * @param now - update time, UTC epoch milliseconds.
    * @returns the updated entry once durable.
    */
   async update(id: ProposalId, patch: JournalPatch, now: number): Promise<JournalEntry> {
-    return this.domain.table('entries').update(id, current => ({ ...current, ...patch, updatedAt: now }))
+    const { note, ...fields } = patch
+    return this.domain.table('entries').update(id, ({ note: kept, ...current }) => {
+      const next = note === null ? undefined : note ?? kept
+      return { ...current, ...fields, ...next === undefined ? {} : { note: next }, updatedAt: now }
+    })
   }
 
   /**

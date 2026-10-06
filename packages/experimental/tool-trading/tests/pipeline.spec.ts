@@ -16,8 +16,9 @@ const PLACE_ORDER_DESCRIPTION = 'Propose a stock or crypto order. The user appro
   + 'exactly one of qty or notional; notional orders are market orders. Crypto orders use time_in_force gtc or ioc and type '
   + 'market, limit, or stop_limit. Fractional and notional stock orders are day orders. A plain stop order is accepted only to '
   + 'reduce a position you hold; use stop_limit otherwise. A market order that adds exposure is sent as a limit near the quoted '
-  + 'price, so it may not fill in a fast market. take_profit with stop_loss adds a bracket to a whole-share stock order. The '
-  + 'result reports the order id and status; later fills arrive as messages.'
+  + 'price, so it may not fill in a fast market. take_profit with stop_loss adds a bracket to a whole-share stock order; the '
+  + "bracket's exits are separate broker orders that this desk does not report, so check get_positions after a bracket may have "
+  + 'exited. The result reports the order id and status; later fills arrive as messages.'
 
 let desk: Desk
 afterEach(async () => { await desk.close() })
@@ -162,7 +163,7 @@ describe('place_order and cancel_order through the tool pipeline', () => {
     expect(text(await run('place_order', buyArgs))).toBe(`Error: ${HALTED}`)
     expect(desk.venue.submitted).toEqual([])
     await vi.waitFor(async () => {
-      expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'rejected', note: 'not sent' })
+      expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'rejected', note: 'not sent: trading is halted' })
     })
     haltDuringApproval = false
     expect(text(await run('place_order', buyArgs, 'call-2'))).toBe(`Error: ${HALTED}`)

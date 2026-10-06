@@ -2867,7 +2867,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async reconcile(): Promise<void>',
-        description: 'Re-read the broker\'s open orders and look up every journaled order still in flight, recording fills the stream did not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker until then); nothing is resubmitted.',
+        description: 'Re-read the broker\'s open orders and look up every journaled order still in flight, recording fills the stream did not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker until then); nothing is resubmitted. A failed lookup leaves that order in flight for the next pass.',
         parameters: [],
         returns: 'when every in-flight order was checked.',
       },

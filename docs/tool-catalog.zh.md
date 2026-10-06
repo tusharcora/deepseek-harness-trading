@@ -2570,7 +2570,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `place_order`
 
-提议一笔股票或加密货币订单。每笔订单在到达券商之前都由用户批准或拒绝；违反风险限额的订单会连同原因被拒绝，且限额无法在此处修改。qty 与 notional 必须且只能给出其一；notional 订单为市价单。加密货币订单使用 time_in_force gtc 或 ioc，类型为 market、limit 或 stop_limit。碎股与 notional 股票订单为当日有效订单。普通 stop 订单仅在减少已有持仓时接受；其他情况请使用 stop_limit。增加敞口的市价单会以接近报价的限价单发送，因此在快速行情中可能无法成交。take_profit 与 stop_loss 一起为整股股票订单附加 bracket。结果报告订单 id 与状态；后续成交以消息形式送达。
+提议一笔股票或加密货币订单。每笔订单在到达券商之前都由用户批准或拒绝；违反风险限额的订单会连同原因被拒绝，且限额无法在此处修改。qty 与 notional 必须且只能给出其一；notional 订单为市价单。加密货币订单使用 time_in_force gtc 或 ioc，类型为 market、limit 或 stop_limit。碎股与 notional 股票订单为当日有效订单。普通 stop 订单仅在减少已有持仓时接受；其他情况请使用 stop_limit。增加敞口的市价单会以接近报价的限价单发送，因此在快速行情中可能无法成交。take_profit 与 stop_loss 一起为整股股票订单附加 bracket；bracket 的平仓单是独立的券商订单，本交易台不会报告它们，因此在 bracket 可能已平仓后请用 get_positions 查看。结果报告订单 id 与状态；后续成交以消息形式送达。
 
 ```json
 {

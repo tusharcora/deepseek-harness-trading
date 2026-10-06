@@ -27,6 +27,8 @@ export const PRICE_MOVED = 'price moved; propose again'
 export const APPROVAL_OFF = "orders need the user's approval, and approval prompts are off in this session"
 /** Order tools need a session to record the proposal in. */
 export const NO_AGENT = 'placing or cancelling orders needs an agent session'
+/** A submission whose outcome the broker did not confirm; the venue's own text names ids the model never uses. */
+export const OUTCOME_UNKNOWN = 'the order outcome is unknown; check list_orders before proposing again'
 /** Alpaca's code for a client order id that was already used. */
 export const DUPLICATE_CLIENT_ORDER_ID = 40010001
 
@@ -142,16 +144,13 @@ export function fillText(fill: TradingFillEvent): string {
 
 /**
  * How a failed submission is reported. An unknown outcome and a reused client order id may mean the order exists, so
- * neither is reported as "not placed".
+ * neither is reported as "not placed"; both are reported in fixed text, because the venue's text names the client order id.
  * @param error - what the venue (or the re-check) threw.
  * @returns the journal outcome and the model-facing message.
  */
 export function failureOf(error: unknown): { readonly outcome: 'failed' | 'unknown'; readonly message: string } {
   if (error instanceof VenueError) {
-    if (error.code === 'unknown-outcome') {
-      const message = `the order outcome is unknown: ${bounded(error.message)}. Check list_orders before proposing again.`
-      return { outcome: 'unknown', message }
-    }
+    if (error.code === 'unknown-outcome') return { outcome: 'unknown', message: OUTCOME_UNKNOWN }
     if (error.code === 'rejected' && error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
       return {
         outcome: 'unknown',

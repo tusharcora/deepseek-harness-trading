@@ -6,7 +6,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { type ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BLOCKED, HALTED, KEYS_MISSING, NO_CHECKED_PROPOSAL, TRADING_BLOCKED } from '../src/format.ts'
+import { BLOCKED, HALTED, KEYS_MISSING, NO_CHECKED_PROPOSAL, renderOrders, TRADING_BLOCKED } from '../src/format.ts'
 import { Journal } from '../src/journal.ts'
 import type { ProposedOrder } from '../src/order-args.ts'
 import type { ProposalContext, ProposeResult } from '../src/types.ts'
@@ -278,6 +278,15 @@ describe('executing a proposal', () => {
     await vi.waitFor(async () => {
       expect(await today()).toMatchObject([{ status: 'submitted', orderId: `order-${clientOrderId.slice(0, 8)}` }])
     })
+    expect((await today())[0]).not.toHaveProperty('note')
+  })
+
+  it('approves a proposal only through the approval of its own order tool call', async () => {
+    desk = await bootDesk()
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1', 'allowed-once', 'get_quote')
+    await expect(desk.executor.execute(id, desk.session.id)).rejects.toThrow(NO_CHECKED_PROPOSAL)
+    expect(desk.venue.submitted).toEqual([])
   })
 
   it('retries a crypto exit rejected for insufficient balance with the same client order id, and only an exit', async () => {
@@ -310,7 +319,7 @@ describe('executing a proposal', () => {
 
   it.each([
     [new VenueError('Alpaca did not confirm order x', 'unknown-outcome'), 'unknown',
-      'the order outcome is unknown: Alpaca did not confirm order x. Check list_orders before proposing again.'],
+      'the order outcome is unknown; check list_orders before proposing again'],
     [new VenueError('client_order_id must be unique', 'rejected', 40010001), 'unknown',
       'the broker reports this order id as already used but does not show the order; check list_orders before proposing again'],
     [new VenueError('insufficient buying power', 'rejected', 40310000), 'failed', 'insufficient buying power'],
@@ -324,14 +333,46 @@ describe('executing a proposal', () => {
     expect(await today()).toMatchObject([{ status: outcome, note: message }])
   })
 
+  // The unknown-outcome messages trading-alpaca's orders.ts throws; each names the 64-hex client order id.
+  const ALPACA_UNKNOWN: readonly (readonly [string, (id: string) => string])[] = [
+    ['an unconfirmed lookup', id => `Alpaca did not confirm order ${id}; check open orders before proposing again `
+      + `(Alpaca returned order o-1 for client order id ${id})`],
+    ['a reused id it cannot read', id => `Alpaca reports client order id ${id} as already used but no order with it could be read; `
+      + 'check open orders before proposing again'],
+    ['an accepted order it cannot read back', id => `Alpaca accepted order ${id} but it could not be read back`],
+  ]
+  it.each(ALPACA_UNKNOWN)('keeps the client order id out of the model text, events, and journal for %s', async (_case, text) => {
+    desk = await bootDesk()
+    desk.venue.respond = (request) => { throw new VenueError(text(request.clientOrderId), 'unknown-outcome') }
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1')
+    const message = 'the order outcome is unknown; check list_orders before proposing again'
+    await expect(desk.executor.execute(id, desk.session.id)).rejects.toThrow(new Error(message))
+    expect(desk.events('trading/order').map(event => event.data)).toEqual([{ proposalId: id, outcome: 'unknown', message }])
+    expect(await today()).toMatchObject([{ status: 'unknown', note: message }])
+    expect(renderOrders(await desk.executor.orders())).not.toMatch(/[0-9a-f]{64}/)
+  })
+
   it('keeps a placed order reported as placed when the journal or session write afterwards fails', async () => {
     desk = await bootDesk()
     const id = idOf(await desk.executor.proposeOrder(buy(), context()))
     approve('call-1')
-    vi.spyOn(Journal.prototype, 'update').mockRejectedValueOnce(new Error('disk full'))
+    const original = Journal.prototype.update
+    // The first write marks the order in flight before it is sent; the second records the broker's answer.
+    vi.spyOn(Journal.prototype, 'update').mockImplementationOnce(original).mockRejectedValueOnce(new Error('disk full'))
     vi.spyOn(desk.session, 'append').mockImplementationOnce(() => { throw new Error('log closed') })
     await expect(desk.executor.execute(id, desk.session.id)).resolves.toMatchObject({ status: 'open' })
     expect(desk.venue.submitted).toHaveLength(1)
+  })
+
+  it('sends nothing when the order cannot be journaled as in flight first', async () => {
+    desk = await bootDesk()
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1')
+    vi.spyOn(Journal.prototype, 'update').mockRejectedValueOnce(new Error('disk full'))
+    await expect(desk.executor.execute(id, desk.session.id)).rejects.toThrow('disk full')
+    expect(desk.venue.submitted).toEqual([])
+    expect(await today()).toMatchObject([{ status: 'failed', note: 'disk full' }])
   })
 
   it('cancels an open order only after approval', async () => {

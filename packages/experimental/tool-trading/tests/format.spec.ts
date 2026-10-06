@@ -79,7 +79,7 @@ describe('order descriptions and summaries', () => {
 describe('failures', () => {
   it('maps venue failures to what the model is told', () => {
     expect(failureOf(new VenueError('lost', 'unknown-outcome')))
-      .toEqual({ outcome: 'unknown', message: 'the order outcome is unknown: lost. Check list_orders before proposing again.' })
+      .toEqual({ outcome: 'unknown', message: 'the order outcome is unknown; check list_orders before proposing again' })
     expect(failureOf(new VenueError('client_order_id must be unique', 'rejected', 40010001))).toEqual({
       outcome: 'unknown',
       message: 'the broker reports this order id as already used but does not show the order; check list_orders before proposing again',
