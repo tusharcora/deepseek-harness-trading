@@ -114,6 +114,7 @@
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:^",
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:^",
     "@deepseek-ai/dsh-experimental-agent-team-profile": "workspace:^",
+    "@deepseek-ai/dsh-experimental-bundle-trading": "workspace:^",
     "@deepseek-ai/dsh-experimental-ptc-runtime-python": "workspace:^",
     "@deepseek-ai/dsh-experimental-tool-agent-team": "workspace:^",
     "@deepseek-ai/dsh-fs-observation-policy": "workspace:^",
