@@ -3,6 +3,7 @@
  *
  * @module @deepseek-ai/dsh-experimental-trading-alpaca/config
  */
+import type { TradingMode } from '@deepseek-ai/dsh-experimental-trading'
 import z from '@deepseek-ai/schemastery'
 
 /** Alpaca provider configuration. */
@@ -69,6 +70,8 @@ export interface Endpoints {
   readonly dataUrl: string
   /** Trade-updates WebSocket URL. */
   readonly tradeStreamUrl: string
+  /** Account mode the trading host implies: `paper` only for Alpaca's paper host or loopback in paper mode, else `live`. */
+  readonly mode: TradingMode
 }
 
 const PAPER_HOST = 'paper-api.alpaca.markets'
@@ -79,20 +82,21 @@ const LOOPBACK_HOSTS: readonly string[] = ['127.0.0.1', 'localhost', '[::1]']
  * moves real money, so it needs the launch flag whatever `mode` says.
  * @param config - provider configuration.
  * @param liveFlag - the launch environment's `DSH_TRADING_LIVE` value.
- * @returns the base URLs.
+ * @returns the base URLs and the effective account mode.
  * @throws Error when the trading host is not paper or loopback (or `mode` is `live`) and `liveFlag` is not exactly `1`.
  */
 export function resolveEndpoints(config: Config, liveFlag: string | undefined): Endpoints {
   const host = config.mode === 'live' ? 'api.alpaca.markets' : PAPER_HOST
-  const endpoints: Endpoints = {
-    tradingUrl: config.tradingUrl === '' ? `https://${host}` : config.tradingUrl,
-    dataUrl: config.dataUrl,
-    tradeStreamUrl: config.tradeStreamUrl === '' ? `wss://${host}/stream` : config.tradeStreamUrl,
-  }
-  const tradingHost = new URL(endpoints.tradingUrl).hostname
+  const tradingUrl = config.tradingUrl === '' ? `https://${host}` : config.tradingUrl
+  const tradingHost = new URL(tradingUrl).hostname
   const paperOrLocal = config.mode === 'paper' && (tradingHost === PAPER_HOST || LOOPBACK_HOSTS.includes(tradingHost))
   if (!paperOrLocal && liveFlag !== '1') {
     throw new Error(`trading-alpaca: trading against ${tradingHost} (mode ${config.mode}) requires DSH_TRADING_LIVE=1 at launch`)
   }
-  return endpoints
+  return {
+    tradingUrl,
+    dataUrl: config.dataUrl,
+    tradeStreamUrl: config.tradeStreamUrl === '' ? `wss://${host}/stream` : config.tradeStreamUrl,
+    mode: paperOrLocal ? 'paper' : 'live',
+  }
 }

@@ -2805,9 +2805,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract mode(): TradingMode',
-        description: 'Account mode this venue trades in, from provider configuration.',
+        description: 'Account mode this venue trades in, as the provider resolves it from its configuration.',
         parameters: [],
-        returns: '`paper` or `live`.',
+        returns: '`paper`, or `live` whenever orders can move real money.',
       },
       {
         signature: 'abstract statusReason(): string',

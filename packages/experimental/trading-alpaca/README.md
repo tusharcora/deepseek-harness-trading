@@ -66,7 +66,7 @@ Keys resolve on every request and every stream connection, never cached: through
 
 ### Paper and live
 
-The trading host decides. Any trading host other than `paper-api.alpaca.markets` or loopback (`127.0.0.1`, `localhost`, `[::1]`), and any `mode: live`, needs `DSH_TRADING_LIVE=1` in the launch environment; otherwise the plugin fails at load. The lock checks the trading host only: `dataUrl` and `tradeStreamUrl` overrides receive the API keys without `DSH_TRADING_LIVE`, so point them only at hosts you trust. Every request uses `redirect: 'error'`, so key headers never follow a redirect to another host.
+The trading host decides. Any trading host other than `paper-api.alpaca.markets` or loopback (`127.0.0.1`, `localhost`, `[::1]`), and any `mode: live`, needs `DSH_TRADING_LIVE=1` in the launch environment; otherwise the plugin fails at load. `mode()` reports `paper` only for `mode: paper` against the paper host or loopback, and `live` for every other trading host, whatever `mode` says. The lock checks the trading host only: `dataUrl` and `tradeStreamUrl` overrides receive the API keys without `DSH_TRADING_LIVE`, so point them only at hosts you trust. Every request uses `redirect: 'error'`, so key headers never follow a redirect to another host.
 
 ### Status
 

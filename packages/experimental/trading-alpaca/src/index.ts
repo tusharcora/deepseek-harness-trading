@@ -58,9 +58,9 @@ export class AlpacaVenue extends TradingVenueGateway {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx)
-    this.accountMode = config.mode
     const environment = launchEnvironmentOf(ctx)
     const endpoints = resolveEndpoints(config, environment.get('DSH_TRADING_LIVE')?.value)
+    this.accountMode = endpoints.mode
     const keys = async (): Promise<AlpacaKeys | undefined> => {
       const keyId = await resolveCredential(ctx, config.apiKeyEnv)
       const secret = await resolveCredential(ctx, config.secretKeyEnv)
@@ -118,7 +118,7 @@ export class AlpacaVenue extends TradingVenueGateway {
 
   /** @returns the venue status. */
   status(): VenueStatus { return this.core.status() }
-  /** @returns the configured account mode. */
+  /** @returns the account mode the resolved trading host implies; `live` for any host other than Alpaca's paper host or loopback. */
   mode(): TradingMode { return this.accountMode }
   /** @returns the readable cause of the current status. */
   statusReason(): string { return this.core.statusReason() }

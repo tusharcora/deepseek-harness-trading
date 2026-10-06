@@ -19,11 +19,12 @@ describe('resolveEndpoints', () => {
       tradingUrl: 'https://paper-api.alpaca.markets',
       dataUrl: 'https://data.alpaca.markets',
       tradeStreamUrl: 'wss://paper-api.alpaca.markets/stream',
+      mode: 'paper',
     })
   })
 
   it('selects the live hosts only with DSH_TRADING_LIVE=1', () => {
-    expect(resolveEndpoints(Config({ mode: 'live' }), '1').tradingUrl).toBe('https://api.alpaca.markets')
+    expect(resolveEndpoints(Config({ mode: 'live' }), '1')).toMatchObject({ tradingUrl: 'https://api.alpaca.markets', mode: 'live' })
     expect(() => resolveEndpoints(Config({ mode: 'live' }), undefined))
       .toThrow(new Error('trading-alpaca: trading against api.alpaca.markets (mode live) requires DSH_TRADING_LIVE=1 at launch'))
     expect(() => resolveEndpoints(Config({ mode: 'live' }), 'true')).toThrow(Error)
@@ -36,12 +37,20 @@ describe('resolveEndpoints', () => {
     expect(() => resolveEndpoints(Config({ tradingUrl: 'https://alpaca.example.com' }), undefined)).toThrow(Error)
   })
 
+  it('reports live for a paper-mode config that trades against a non-paper host', () => {
+    expect(resolveEndpoints(Config({ tradingUrl: 'https://api.alpaca.markets' }), '1').mode).toBe('live')
+    expect(resolveEndpoints(Config({ tradingUrl: 'https://alpaca.example.com' }), '1').mode).toBe('live')
+    expect(resolveEndpoints(Config({ mode: 'live', tradingUrl: 'http://127.0.0.1:1' }), '1').mode).toBe('live')
+  })
+
   it('keeps explicit loopback overrides without the flag', () => {
     const config = Config({ tradingUrl: 'http://127.0.0.1:1', dataUrl: 'http://127.0.0.1:2', tradeStreamUrl: 'ws://127.0.0.1:3' })
     expect(resolveEndpoints(config, undefined)).toEqual({
-      tradingUrl: 'http://127.0.0.1:1', dataUrl: 'http://127.0.0.1:2', tradeStreamUrl: 'ws://127.0.0.1:3',
+      tradingUrl: 'http://127.0.0.1:1', dataUrl: 'http://127.0.0.1:2', tradeStreamUrl: 'ws://127.0.0.1:3', mode: 'paper',
     })
-    expect(resolveEndpoints(Config({ tradingUrl: 'http://localhost:9' }), undefined).tradingUrl).toBe('http://localhost:9')
-    expect(resolveEndpoints(Config({ tradingUrl: 'http://[::1]:9' }), undefined).tradingUrl).toBe('http://[::1]:9')
+    expect(resolveEndpoints(Config({ tradingUrl: 'http://localhost:9' }), undefined))
+      .toMatchObject({ tradingUrl: 'http://localhost:9', mode: 'paper' })
+    expect(resolveEndpoints(Config({ tradingUrl: 'http://[::1]:9' }), undefined))
+      .toMatchObject({ tradingUrl: 'http://[::1]:9', mode: 'paper' })
   })
 })

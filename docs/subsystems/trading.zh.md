@@ -26,8 +26,8 @@ A trading venue. Every method that reaches the broker resolves the API keys at c
 abstract status(): VenueStatus
 
 /**
- * Account mode this venue trades in, from provider configuration.
- * @returns `paper` or `live`.
+ * Account mode this venue trades in, as the provider resolves it from its configuration.
+ * @returns `paper`, or `live` whenever orders can move real money.
  */
 abstract mode(): TradingMode
 
