@@ -11,6 +11,7 @@
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ClientOrderId, OrderUpdate, PositionSnapshot } from '@deepseek-ai/dsh-experimental-trading'
+import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
 import { describe, expect, it } from 'vitest'
 import { AlpacaHttp } from '../src/http.ts'
 import { INITIAL_SAFETY_STATE } from '../src/safety.ts'
@@ -154,8 +155,18 @@ describe.skipIf(!optedIn)('Alpaca paper', { retry: 0 }, () => {
         available = (await btcPosition())?.qtyAvailable ?? 0
       }
       expect(available).toBeGreaterThan(0)
-      await venue.submitOrder({ symbol: btc, side: 'sell', qty: available, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
-        timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>(`${prefix}rest`) })
+      // A sell within about a second of the fill can still be refused 'insufficient balance' although qty_available
+      // shows the coins; each attempt uses a fresh client order id because a refused order id stays used.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await venue.submitOrder({ symbol: btc, side: 'sell', qty: available, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
+            timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>(`${prefix}rest-${String(attempt)}`) })
+          break
+        } catch (error) {
+          if (!(error instanceof VenueError) || !error.message.includes('insufficient balance') || attempt >= 20) throw error
+          await sleep(500)
+        }
+      }
       const closing = await venue.closePosition(btc)
       expect(closing.side).toBe('sell')
       let remaining = await btcHeld()
