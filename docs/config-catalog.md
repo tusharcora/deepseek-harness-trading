@@ -1225,6 +1225,96 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-trading -->
+<a id="deepseek-aidsh-experimental-tool-trading"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-trading`
+
+- `inject`: `tradingVenue` · `tools` · `storageDomain` · `sessions` · `agents`
+- `source`: [`packages/experimental/tool-trading/src/config.ts:11`](../packages/experimental/tool-trading/src/config.ts)
+
+```ts config-catalog
+/** Executor configuration. */
+export interface Config {
+  /** Largest estimated order value in dollars. */
+  maxOrderNotional: number
+  /** Largest position value as a fraction of equity (`0.2` = 20%), counting open orders and pending proposals. */
+  maxPositionPct: number
+  /** Day loss as a fraction of the previous close's equity at which exposure-increasing orders stop. */
+  dailyLossPct: number
+  /** Desk orders per trading day, counting pending proposals. */
+  maxOrdersPerDay: number
+  /** Whether sells may open or extend a short position. */
+  allowShort: boolean
+  /** Whether buys may exceed cash. */
+  allowMargin: boolean
+  /** Tickers allowed; empty allows every ticker. */
+  allowlist: string[]
+  /** Tickers never allowed. */
+  denylist: string[]
+  /** Quote age above which market orders are refused while the market is open, milliseconds. */
+  staleQuoteMs: number
+  /** Allowed price drift between approval and submission, and the market-order price cap, as a fraction. */
+  driftTolerance: number
+  /** Bars `get_bars` returns when the call names no limit. */
+  barsDefault: number
+  /** Most bars `get_bars` returns. */
+  barsCap: number
+  /** Interval between re-reads of open and in-flight orders, milliseconds. */
+  reconcileMs: number
+  /** Waits before retrying a crypto exit the broker rejected for insufficient balance right after a fill; one retry each. */
+  exitRetryMs: number[]
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-trading -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-trading-alpaca -->
+<a id="deepseek-aidsh-experimental-trading-alpaca"></a>
+
+## `@deepseek-ai/dsh-experimental-trading-alpaca`
+
+- `inject`: `storageDomain`
+- `source`: [`packages/experimental/trading-alpaca/src/config.ts:10`](../packages/experimental/trading-alpaca/src/config.ts)
+
+```ts config-catalog
+/** Alpaca provider configuration. */
+export interface Config {
+  /** Paper or live account; live also needs `DSH_TRADING_LIVE=1` at launch. */
+  mode: 'paper' | 'live'
+  /** Credential name holding the Alpaca API key id. */
+  apiKeyEnv: string
+  /** Credential name holding the Alpaca secret key. */
+  secretKeyEnv: string
+  /** Equity data feed; the free plan serves only `iex`. */
+  feed: 'iex' | 'sip'
+  /** Interval between account-configuration drift checks, milliseconds. */
+  driftCheckMs: number
+  /** Per-request timeout for Alpaca REST calls, milliseconds. */
+  requestTimeoutMs: number
+  /** Waits before retrying a rate-limited read; one retry per entry. */
+  rateLimitRetryMs: number[]
+  /** Waits before trade-stream reconnect attempts; the last entry repeats. */
+  streamBackoffMs: number[]
+  /** Waits before retrying an unconfirmed broker suspension during Halt; one retry per entry. */
+  suspendRetryMs: number[]
+  /** Wait before the second confirming lookup after an order submission failed in transit or hit a used client order id, milliseconds. */
+  lookupConfirmMs: number
+  /** Wait between checks that a symbol's cancelled orders are gone before closing its position, milliseconds. */
+  closeSettleMs: number
+  /** Maximum such checks before closing anyway. */
+  closeSettleChecks: number
+  /** Alpaca's minimum crypto order value in dollars; Alpaca rejects smaller crypto orders but does not publish this on the asset. */
+  cryptoMinNotional: number
+  /** Trading API base URL; empty selects the paper or live host for `mode`. */
+  tradingUrl: string
+  /** Market data API base URL. */
+  dataUrl: string
+  /** Trade-updates stream URL; empty selects the paper or live host for `mode`. */
+  tradeStreamUrl: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-trading-alpaca -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -4458,6 +4548,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 | `@deepseek-ai/dsh-compaction` | `CompactionEngine` | — | [`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts) |
 | `@deepseek-ai/dsh-credentials` | `CredentialProvider` | — | [`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts) |
 | `@deepseek-ai/dsh-deepseek-account` | `DeepSeekAccount` | — | [`packages/credentials/deepseek-account/src/index.ts`](../packages/credentials/deepseek-account/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-trading-venue` | `TradingVenueGateway` | — | [`packages/experimental/trading-venue/src/index.ts`](../packages/experimental/trading-venue/src/index.ts) |
 | `@deepseek-ai/dsh-file-reference` | `FileReferenceService` | — | [`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts) |
 | `@deepseek-ai/dsh-fs` | `FileSystem` | — | [`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts) |
 | `@deepseek-ai/dsh-host-directory-picker` | `DirectoryPicker` | — | [`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts) |
@@ -4496,7 +4587,9 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-deque` | — | [`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-agent-team-profile` | — | [`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-browser-use-runtime` | — | [`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-bundle-trading` | — | [`packages/experimental/bundle-trading/src/index.ts`](../packages/experimental/bundle-trading/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-inspector-profile` | — | [`packages/experimental/inspector-profile/src/index.ts`](../packages/experimental/inspector-profile/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-trading` | — | [`packages/experimental/trading/src/index.ts`](../packages/experimental/trading/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-voice-input-bundle` | — | [`packages/experimental/voice-input-bundle/src/index.ts`](../packages/experimental/voice-input-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-packer` | — | [`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-runtime` | — | [`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts) |

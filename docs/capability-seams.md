@@ -238,6 +238,11 @@ flowchart LR
   pkg_experimental_tool_agent_team["experimental-tool-agent-team"]
   pkg_experimental_claude_code_mods["experimental-claude-code-mods"]
   svc_claudeCodeMods["ctx.claudeCodeMods<br/>Claude Code mods bridge"]
+  pkg_experimental_trading_venue["experimental-trading-venue"]
+  svc_tradingVenue["ctx.tradingVenue<br/>Trading venue"]
+  pkg_experimental_trading_alpaca["experimental-trading-alpaca"]
+  pkg_experimental_tool_trading["experimental-tool-trading"]
+  svc_tradingExecutor["ctx.tradingExecutor<br/>Trading order executor"]
   pkg_inspector["inspector"]
   svc_inspector["ctx.inspector<br/>Cross-realm runtime inspection"]
   pkg_jobs["jobs"]
@@ -327,6 +332,9 @@ flowchart LR
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
+  pkg_experimental_tool_trading --> svc_tradingExecutor
+  pkg_experimental_trading_alpaca --> svc_tradingVenue
+  pkg_experimental_trading_venue --> svc_tradingVenue
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
@@ -554,6 +562,8 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tradingExecutor --> pkg_experimental_tool_trading
+  svc_tradingVenue --> pkg_experimental_tool_trading
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -651,6 +661,8 @@ flowchart LR
 | `ctx.speechToText` | `seam` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | [`experimental-api-speech-to-text`](../packages/experimental/api-speech-to-text) | - | Routes explicit recognizers; the browser uses the authenticated Remote and keeps transcripts in the draft until submission. |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team) | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes model controls. |
 | `ctx.claudeCodeMods` | `core` | [`experimental-claude-code-mods`](../packages/experimental/claude-code-mods) | - | - | - | Loads mods that defineMod plugins add, raises their hook chains from harness extension points, and draws the band above the prompt over its Remote. |
+| `ctx.tradingVenue` | `seam` | [`experimental-trading-venue`](../packages/experimental/trading-venue) | [`experimental-trading-alpaca`](../packages/experimental/trading-alpaca) | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | Account reads, market data, order submission, Halt, and order updates for the trading desk; the Alpaca provider owns broker access and account safety. |
+| `ctx.tradingExecutor` | `core` | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | Validates, risk-checks, reserves, and records orders, then re-checks and submits them over ctx.tradingVenue after the user approves; the seven trading tools call it, and proposeOrder/proposeCancel also serve the planned MCP endpoint. |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | Owns the Worker-hosted CDP target and the transport-independent Host and Client observation and Cordis-tree query API. |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs), [`api-job-controller`](../packages/api/job-controller) | - | Producers (background bash/pwsh, PTY sends, and subagent delegations) register running work; record-declaring jobs additionally stream raw output for non-consuming observers; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |

@@ -3336,6 +3336,202 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'tradingExecutor',
+    summary: 'The order executor service.',
+    description: 'The order executor service.',
+    methods: [
+      {
+        signature: 'status(): VenueStatus',
+        description: 'The venue\'s status, read synchronously; the tools refuse orders unless it is `ready`.',
+        parameters: [],
+        returns: 'the venue\'s derived status.',
+      },
+      {
+        signature: 'barWindow(): { readonly defaultCount: number; readonly cap: number }',
+        description: 'The configured `get_bars` window, for the tool schema.',
+        parameters: [],
+        returns: 'how many bars `get_bars` shows by default and at most.',
+      },
+      {
+        signature: 'async quote(symbolText: string): Promise<QuoteReport>',
+        description: 'Read the latest quote and the market session for one instrument.',
+        parameters: [{ name: 'symbolText', description: 'instrument name as typed.' }],
+        returns: 'the latest quote, its age, and whether the market is open.',
+      },
+      {
+        signature: 'async bars(request: BarsRequest): Promise<BarsReport>',
+        description: 'Read recent bars with warm-up for the indicators. A request without a limit gets `barsDefault` bars; a larger limit is cut to `barsCap`.',
+        parameters: [{ name: 'request', description: 'symbol, timeframe, optional count and indicators.' }],
+        returns: 'the bars report over at most `barsCap` bars.',
+        throws: ['Error when the timeframe is unknown or the limit is not a whole number of at least 1.'],
+      },
+      {
+        signature: 'async account(): Promise<AccountReport>',
+        description: 'Read the account, its mode, and the venue status.',
+        parameters: [],
+        returns: 'the account with day profit or loss against the previous close.',
+      },
+      {
+        signature: 'async positions(): Promise<PositionReport[]>',
+        description: 'Read the broker\'s open positions.',
+        parameters: [],
+        returns: 'open positions.',
+      },
+      {
+        signature: 'async orders(): Promise<OrdersReport>',
+        description: 'Read the broker\'s open orders and today\'s journal entries for order proposals.',
+        parameters: [],
+        returns: 'the broker\'s open orders and today\'s desk orders.',
+      },
+      {
+        signature: 'async proposeOrder(input: ProposedOrder, context: ProposalContext): Promise<ProposeResult>',
+        description: 'Steps 1–4 for an order: validate, then under the account lock snapshot, check, and reserve; journal the proposal and append `trading/proposal`. A risk denial is journaled; an identical pending MCP proposal is returned instead.',
+        parameters: [{ name: 'input', description: 'the order and its rationale.' }, { name: 'context', description: 'proposing session, source, and call id.' }],
+        returns: 'the denial, or the pending proposal and its approval summary.',
+      },
+      {
+        signature: 'async proposeCancel(input: ProposedCancel, context: ProposalContext): Promise<ProposeResult>',
+        description: 'Steps 1–4 for a cancellation: the order must be open at the broker.',
+        parameters: [{ name: 'input', description: 'broker order id and rationale.' }, { name: 'context', description: 'proposing session, source, and call id.' }],
+        returns: 'the denial, or the pending proposal and its approval summary.',
+      },
+      {
+        signature: 'proposalForCall(sessionId: SessionId, callId: ToolCallId): ProposalId | undefined',
+        description: 'Look up the proposal created for an in-app tool call.',
+        parameters: [{ name: 'sessionId', description: 'session of the tool call.' }, { name: 'callId', description: 'in-app tool call id.' }],
+        returns: 'the unsettled proposal the pre-execute listener created for that call.',
+      },
+      {
+        signature: 'async execute(proposalId: ProposalId, sessionId: SessionId): Promise<OrderReport>',
+        description: 'Steps 5–8. Fails closed: only a proposal whose own `trading/proposal` event committed and whose call received an `allowed-once` decision is sent; under the account lock it is re-snapshotted, re-checked, planned with the post-approval reduce-only answer, and submitted with its client order id. The proposal settles whatever happens.',
+        parameters: [{ name: 'proposalId', description: 'the proposal.' }, { name: 'sessionId', description: 'the session that proposed it.' }],
+        returns: 'the submitted order or accepted cancellation.',
+        throws: ['Error with a model-facing reason.'],
+      },
+      {
+        signature: 'async reconcile(): Promise<void>',
+        description: 'Re-read the broker\'s open orders and look up every journaled order still in flight, recording fills the stream did not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker until then); nothing is resubmitted. A failed lookup leaves that order in flight for the next pass.',
+        parameters: [],
+        returns: 'when every in-flight order was checked.',
+      },
+    ],
+  },
+  {
+    key: 'tradingVenue',
+    summary: 'A trading venue.',
+    description: 'A trading venue. Every method that reaches the broker resolves the API keys at call time and throws VenueError on failure. `submitOrder` refuses while the venue is `halted` or `blocked`; `closePosition` and `flatten` are reduce-only and run whenever keys exist, including while halted or blocked. `halt` never fails because the broker is unreachable: it halts the desk first and keeps retrying the broker suspension.',
+    methods: [
+      {
+        signature: 'abstract status(): VenueStatus',
+        description: 'Current readiness.',
+        parameters: [],
+        returns: 'the venue status.',
+      },
+      {
+        signature: 'abstract mode(): TradingMode',
+        description: 'Account mode this venue trades in, as the provider resolves it from its configuration.',
+        parameters: [],
+        returns: '`paper`, or `live` whenever orders can move real money.',
+      },
+      {
+        signature: 'abstract statusReason(): string',
+        description: 'Readable cause of the current status, for the user\'s status display.',
+        parameters: [],
+        returns: 'the saved Halt reason while halted, the block reason while blocked, why setup has not completed while unconfigured, and an empty string while ready.',
+      },
+      {
+        signature: 'abstract account(): Promise<AccountSnapshot>',
+        description: 'Read the account.',
+        parameters: [],
+        returns: 'equity, cash, last equity, buying power, and whether trading is blocked.',
+      },
+      {
+        signature: 'abstract positions(): Promise<PositionSnapshot[]>',
+        description: 'Read open positions.',
+        parameters: [],
+        returns: 'every open position.',
+      },
+      {
+        signature: 'abstract openOrders(): Promise<BrokerOrder[]>',
+        description: 'Read open orders.',
+        parameters: [],
+        returns: 'every order the broker still works.',
+      },
+      {
+        signature: 'abstract order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>',
+        description: 'Look up one order by the idempotency key it was submitted with, whether it is still open or not.',
+        parameters: [{ name: 'clientOrderId', description: 'idempotency key the order was submitted with.' }],
+        returns: 'the order, or undefined when the broker has no order with that key.',
+      },
+      {
+        signature: 'abstract asset(symbol: TradingSymbol): Promise<Asset>',
+        description: 'Read broker facts for one instrument.',
+        parameters: [{ name: 'symbol', description: 'instrument.' }],
+        returns: 'tradability, fractional support, minimum size, and price tick.',
+      },
+      {
+        signature: 'abstract marketOpen(symbol: TradingSymbol): Promise<boolean>',
+        description: 'Whether the instrument\'s market is open now.',
+        parameters: [{ name: 'symbol', description: 'instrument.' }],
+        returns: 'true during regular hours for equities, always true for crypto.',
+      },
+      {
+        signature: 'abstract latestQuote(symbol: TradingSymbol): Promise<Quote>',
+        description: 'Read the latest quote.',
+        parameters: [{ name: 'symbol', description: 'instrument.' }],
+        returns: 'best bid, best ask, and quote time.',
+      },
+      {
+        signature: 'abstract bars(symbol: TradingSymbol, timeframe: Timeframe, query: BarQuery): Promise<Bar[]>',
+        description: 'Read bar history, oldest first.',
+        parameters: [{ name: 'symbol', description: 'instrument.' }, { name: 'timeframe', description: 'bar timeframe.' }, { name: 'query', description: 'time range and maximum count.' }],
+        returns: 'at most `query.limit` bars, oldest first.',
+      },
+      {
+        signature: 'abstract submitOrder(request: BrokerOrderRequest): Promise<BrokerOrder>',
+        description: 'Submit an order. A retry with the same `clientOrderId` returns the existing order instead of creating a second one. Refused while halted or blocked, including a Halt that arrives while the order is still being prepared.',
+        parameters: [{ name: 'request', description: 'approved, planned order.' }],
+        returns: 'the order as the broker accepted it.',
+      },
+      {
+        signature: 'abstract cancelOrder(id: BrokerOrderId): Promise<void>',
+        description: 'Cancel one open order.',
+        parameters: [{ name: 'id', description: 'broker order id.' }],
+        returns: 'when the broker accepted the cancellation.',
+      },
+      {
+        signature: 'abstract closePosition(symbol: TradingSymbol): Promise<BrokerOrder>',
+        description: 'Cancel the instrument\'s open orders, then close the position at market; allowed while halted or blocked. Throws VenueError with code `not-found` when there is no position for the instrument; the instrument\'s open orders are cancelled even then.',
+        parameters: [{ name: 'symbol', description: 'instrument.' }],
+        returns: 'the closing order.',
+      },
+      {
+        signature: 'abstract flatten(): Promise<BrokerOrder[]>',
+        description: 'Cancel every open order, then attempt to close every position at market; allowed while halted or blocked. When any position fails to close it throws VenueError with code `rejected` naming the failed instruments; the closes that succeeded still stand.',
+        parameters: [],
+        returns: 'the closing orders.',
+      },
+      {
+        signature: 'abstract halt(reason: string): Promise<void>',
+        description: 'Halt the desk now and persist it; then suspend trading at the broker, retrying until confirmed (a failed attempt leaves the suspension pending and the drift watch retries it). Works without keys and while blocked.',
+        parameters: [{ name: 'reason', description: 'readable cause shown in the panel.' }],
+        returns: 'when the desk is halted; the broker suspension may still be pending.',
+      },
+      {
+        signature: 'abstract resume(): Promise<void>',
+        description: 'Re-apply the account safety settings and lift the Halt. Refuses with VenueError while the venue is `unconfigured` or `blocked`. It may resolve with the desk still halted: a Halt requested after the resume began wins. Check TradingVenueGateway.status once it resolves.',
+        parameters: [],
+        returns: 'when the broker and the saved Halt state agree; the desk is running or, when a later Halt won, halted.',
+      },
+      {
+        signature: 'abstract subscribeOrderUpdates(listener: (event: OrderStreamEvent) => void): () => void',
+        description: 'Receive order updates and gaps; the venue streams only while at least one listener is registered. After a gap the listener must re-read open orders and positions, because missed updates are not replayed. A gap is delivered only after the stream has re-authenticated and is listening again, so a re-read made after it cannot miss updates, or once when the stream stops for good. A listener that throws does not keep an event from the other listeners.',
+        parameters: [{ name: 'listener', description: 'called once per event.' }],
+        returns: 'a disposer that removes the listener.',
+      },
+    ],
+  },
+  {
     key: 'typert',
     summary: 'Registry of generated schemas, package reflection, invocations, and Remote dependency providers.',
     description: 'Registry of generated schemas, package reflection, invocations, and Remote dependency providers.',
@@ -4345,6 +4541,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'exec', description: 'the execution object that traversed the pipeline.' }, { name: 'result', description: 'a deep-frozen snapshot of the final returned result.' }],
   },
   {
+    name: 'trading/venue-status',
+    mode: 'emit',
+    signature: '\'trading/venue-status\'(status: VenueStatus, reason: string): void',
+    summary: 'The venue\'s readiness changed.',
+    description: 'The venue\'s readiness changed.',
+    parameters: [{ name: 'status', description: 'new readiness.' }, { name: 'reason', description: 'readable cause, such as the account setting that drifted.' }],
+  },
+  {
     name: 'user-questions/request',
     mode: 'waterfall',
     signature: '\'user-questions/request\'( this: Scoped<Agent>, request: AskUserQuestionRequestEvent, next: () => Promise<AskUserQuestionAnswer>, ): Promise<AskUserQuestionAnswer>',
@@ -4455,6 +4659,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountProfile',
     declaration: 'export interface AccountProfile {\n    readonly id: AccountUserId | null;\n    readonly name: string | null;\n    readonly contact: string | null;\n    readonly avatarUrl?: string | null;\n}',
+  },
+  {
+    name: 'AccountReport',
+    declaration: 'export type AccountReport = {\n    readonly mode: TradingMode;\n    readonly status: VenueStatus;\n    readonly equity: number;\n    readonly cash: number;\n    readonly buyingPower: number;\n    readonly dayPl: number;\n    readonly dayPlPct: number;\n    readonly tradingBlocked: boolean;\n};',
+  },
+  {
+    name: 'AccountSnapshot',
+    declaration: 'export interface AccountSnapshot {\n    readonly equity: number;\n    readonly cash: number;\n    readonly lastEquity: number;\n    readonly buyingPower: number;\n    readonly tradingBlocked: boolean;\n}',
   },
   {
     name: 'AccountUserId',
@@ -4621,6 +4833,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
   },
   {
+    name: 'AssetClass',
+    declaration: 'export type AssetClass = \'equity\' | \'crypto\';',
+  },
+  {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends MessageBase {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
   },
@@ -4713,6 +4929,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
   {
+    name: 'Bar',
+    declaration: 'export interface Bar {\n    readonly t: number;\n    readonly o: number;\n    readonly h: number;\n    readonly l: number;\n    readonly c: number;\n    readonly v: number;\n}',
+  },
+  {
+    name: 'BarQuery',
+    declaration: 'export interface BarQuery {\n    readonly start?: number;\n    readonly end?: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'BarsReport',
+    declaration: 'export type BarsReport = {\n    readonly symbol: string;\n    readonly timeframe: Timeframe;\n    readonly count: number;\n    readonly summary: {\n        readonly last: number;\n        readonly high: number;\n        readonly low: number;\n        readonly changePct: number;\n        readonly swingHighs: SwingPoint[];\n        readonly swingLows: SwingPoint[];\n    } | null;\n    readonly indicators: {\n        readonly sma20?: number | null;\n        readonly ema20?: number | null;\n        readonly rsi14?: number | null;\n        readonly macd?: {\n            readonly macd: number | null;\n            readonly signal: number | null;\n            readonly histogram: number | null;\n        };\n        readonly bollinger?: {\n            readonly upper: number | null;\n            readonly middle: number | null;\n            readonly lower: number | null;\n        };\n    };\n    readonly bars: number[][];\n};',
+  },
+  {
+    name: 'BarsRequest',
+    declaration: 'export interface BarsRequest {\n    readonly symbol: string;\n    readonly timeframe: string;\n    readonly limit?: number;\n    readonly indicators?: readonly IndicatorName[];\n}',
+  },
+  {
     name: 'BashEnvContributor',
     declaration: 'export interface BashEnvContributor {\n    name: string;\n    variables: Readonly<Record<DshEnvironmentKey, BashEnvVariable>>;\n    resolve(execution: ToolExecution): Readonly<Partial<Record<DshEnvironmentKey, string>>>;\n}',
   },
@@ -4729,12 +4961,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BoxProps {\n    readonly flexDirection?: \'row\' | \'column\' | undefined;\n    readonly paddingX?: number | undefined;\n    readonly paddingY?: number | undefined;\n    readonly padding?: number | undefined;\n    readonly gap?: number | undefined;\n    readonly border?: boolean | string | undefined;\n    readonly borderColor?: string | undefined;\n    readonly children?: UiNode | undefined;\n}',
   },
   {
+    name: 'Bracket',
+    declaration: 'export interface Bracket {\n    readonly takeProfit: number;\n    readonly stopLoss: number;\n}',
+  },
+  {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
   {
     name: 'BrandedNumber',
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrokerOrder',
+    declaration: 'export interface BrokerOrder {\n    readonly id: BrokerOrderId;\n    readonly clientOrderId: ClientOrderId;\n    readonly symbol: TradingSymbol;\n    readonly side: Side;\n    readonly type: OrderType | \'other\';\n    readonly timeInForce: string;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly limitPrice?: number;\n    readonly stopPrice?: number;\n    readonly filledQty: number;\n    readonly filledAvgPrice?: number;\n    readonly status: OrderStatus;\n    readonly submittedAt?: number;\n}',
+  },
+  {
+    name: 'BrokerOrderId',
+    declaration: 'export type BrokerOrderId = Branded<\'TradingBrokerOrderId\'>;',
+  },
+  {
+    name: 'BrokerOrderRequest',
+    declaration: 'export interface BrokerOrderRequest {\n    readonly symbol: TradingSymbol;\n    readonly side: Side;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly type: OrderType;\n    readonly limitPrice?: number;\n    readonly stopPrice?: number;\n    readonly timeInForce: TimeInForce;\n    readonly bracket?: Bracket;\n    readonly clientOrderId: ClientOrderId;\n}',
   },
   {
     name: 'BrowserUseProviderName',
@@ -4759,6 +5007,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'ClientOrderId',
+    declaration: 'export type ClientOrderId = Branded<\'TradingClientOrderId\'>;',
   },
   {
     name: 'CollectedOutput',
@@ -5441,6 +5693,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
   },
   {
+    name: 'IndicatorName',
+    declaration: 'export type IndicatorName = \'sma\' | \'ema\' | \'rsi\' | \'macd\' | \'bollinger\';',
+  },
+  {
     name: 'InspectOptions',
     declaration: 'export interface InspectOptions {\n    readonly registry?: Registry;\n}',
   },
@@ -5611,6 +5867,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'JobView',
     declaration: 'export interface JobView {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly owner?: SessionId;\n    readonly outputLimitBytes?: number;\n    readonly status: JobStatus;\n    readonly progress?: string;\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly output: {\n        readonly total: number;\n        readonly earliest: number;\n        readonly spillPaths?: readonly string[];\n    };\n}',
+  },
+  {
+    name: 'JournalRow',
+    declaration: 'export type JournalRow = {\n    readonly proposalId: ProposalId;\n    readonly symbol: string;\n    readonly side: Side;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly status: JournalStatus;\n    readonly filledQty: number;\n    readonly filledAvgPrice?: number;\n    readonly orderId?: BrokerOrderId;\n    readonly note?: string;\n};',
+  },
+  {
+    name: 'JournalStatus',
+    declaration: 'export type JournalStatus = \'proposed\' | \'denied\' | \'rejected\' | \'submitted\' | \'partially_filled\' | \'filled\' | \'canceled\' | \'expired\' | \'failed\' | \'unknown\';',
   },
   {
     name: 'JsonSchemaNode',
@@ -5993,6 +6257,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'OrderReport',
+    declaration: 'export type OrderReport = {\n    readonly proposalId: ProposalId;\n    readonly orderId: BrokerOrderId;\n    readonly symbol: string;\n    readonly side: Side;\n    readonly type: string;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly limitPrice?: number;\n    readonly stopPrice?: number;\n    readonly timeInForce: string;\n    readonly status: string;\n    readonly filledQty: number;\n    readonly filledAvgPrice?: number;\n    readonly capped: boolean;\n};',
+  },
+  {
+    name: 'OrderRequest',
+    declaration: 'export interface OrderRequest {\n    readonly symbol: TradingSymbol;\n    readonly side: Side;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly type: OrderType;\n    readonly limitPrice?: number;\n    readonly stopPrice?: number;\n    readonly timeInForce: TimeInForce;\n    readonly bracket?: Bracket;\n}',
+  },
+  {
+    name: 'OrderRow',
+    declaration: 'export type OrderRow = {\n    readonly orderId: BrokerOrderId;\n    readonly symbol: string;\n    readonly side: Side;\n    readonly type: string;\n    readonly qty?: number;\n    readonly notional?: number;\n    readonly limitPrice?: number;\n    readonly stopPrice?: number;\n    readonly timeInForce: string;\n    readonly filledQty: number;\n    readonly status: OrderStatus;\n};',
+  },
+  {
+    name: 'OrdersReport',
+    declaration: 'export type OrdersReport = {\n    readonly open: OrderRow[];\n    readonly today: JournalRow[];\n};',
+  },
+  {
+    name: 'OrderStatus',
+    declaration: 'export type OrderStatus = \'open\' | \'partially_filled\' | \'filled\' | \'canceled\' | \'rejected\' | \'expired\';',
+  },
+  {
+    name: 'OrderStreamEvent',
+    declaration: 'export type OrderStreamEvent = {\n    readonly kind: \'update\';\n    readonly update: OrderUpdate;\n} | {\n    readonly kind: \'gap\';\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'OrderType',
+    declaration: 'export type OrderType = \'market\' | \'limit\' | \'stop\' | \'stop_limit\';',
+  },
+  {
+    name: 'OrderUpdate',
+    declaration: 'export interface OrderUpdate {\n    readonly event: OrderUpdateEvent;\n    readonly order: BrokerOrder;\n    readonly t: number;\n    readonly fillPrice?: number;\n    readonly fillQty?: number;\n    readonly positionQty?: number;\n}',
+  },
+  {
+    name: 'OrderUpdateEvent',
+    declaration: 'export type OrderUpdateEvent = \'new\' | \'partial_fill\' | \'fill\' | \'canceled\' | \'expired\' | \'rejected\' | \'other\';',
+  },
+  {
     name: 'OTelEventRecord',
     declaration: 'export interface OTelEventRecord {\n    eventName: string;\n    body: string;\n    timestamp: number;\n    severityNumber?: SeverityNumber;\n    attributes?: Record<string, OTelEventScalar | Record<string, OTelEventScalar>>;\n}',
   },
@@ -6095,6 +6395,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PluginSpecInspection',
     declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly registries?: Registry[];\n};',
+  },
+  {
+    name: 'PositionReport',
+    declaration: 'export type PositionReport = {\n    readonly symbol: string;\n    readonly qty: number;\n    readonly qtyAvailable: number;\n    readonly avgEntryPrice: number;\n    readonly currentPrice: number;\n    readonly marketValue: number;\n    readonly unrealizedPl: number;\n};',
+  },
+  {
+    name: 'PositionSnapshot',
+    declaration: 'export interface PositionSnapshot {\n    readonly symbol: TradingSymbol;\n    readonly qty: number;\n    readonly qtyAvailable: number;\n    readonly avgEntryPrice: number;\n    readonly currentPrice: number;\n    readonly marketValue: number;\n    readonly unrealizedPl: number;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -6221,6 +6529,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PromptSubmitResult = {\n    text: string;\n    context?: readonly string[];\n    drop?: undefined;\n} | {\n    drop: string;\n    text?: undefined;\n    context?: undefined;\n};',
   },
   {
+    name: 'ProposalContext',
+    declaration: 'export interface ProposalContext {\n    readonly session: Session;\n    readonly source: ProposalSource;\n    readonly callId?: ToolCallId;\n}',
+  },
+  {
+    name: 'ProposalId',
+    declaration: 'export type ProposalId = Branded<\'TradingProposalId\'>;',
+  },
+  {
+    name: 'ProposalSource',
+    declaration: 'export type ProposalSource = \'dsh-agent\' | \'claude-code-mcp\';',
+  },
+  {
+    name: 'ProposedCancel',
+    declaration: 'export interface ProposedCancel {\n    readonly orderId: BrokerOrderId;\n    readonly rationale: string;\n}',
+  },
+  {
+    name: 'ProposedOrder',
+    declaration: 'export interface ProposedOrder {\n    readonly order: OrderRequest;\n    readonly rationale: string;\n}',
+  },
+  {
+    name: 'ProposeResult',
+    declaration: 'export type ProposeResult = {\n    readonly kind: \'denied\';\n    readonly reasons: readonly string[];\n} | {\n    readonly kind: \'pending\';\n    readonly proposalId: ProposalId;\n    readonly summary: string;\n} | {\n    readonly kind: \'duplicate\';\n    readonly proposalId: ProposalId;\n    readonly summary: string;\n};',
+  },
+  {
     name: 'ProviderRequestId',
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
@@ -6275,6 +6607,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'QueueAction',
     declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly TextBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
+    name: 'Quote',
+    declaration: 'export interface Quote {\n    readonly bid: number;\n    readonly ask: number;\n    readonly t: number;\n}',
+  },
+  {
+    name: 'QuoteReport',
+    declaration: 'export type QuoteReport = {\n    readonly symbol: string;\n    readonly assetClass: AssetClass;\n    readonly bid: number;\n    readonly ask: number;\n    readonly mid: number;\n    readonly ageSeconds: number;\n    readonly marketOpen: boolean;\n};',
   },
   {
     name: 'ReadFileLine',
@@ -7193,6 +7533,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ShellSandboxInfo {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n    runnerFailed?: boolean;\n}',
   },
   {
+    name: 'Side',
+    declaration: 'export type Side = \'buy\' | \'sell\';',
+  },
+  {
     name: 'SignInAttemptId',
     declaration: 'export type SignInAttemptId = Branded<\'SignInAttemptId\'>;',
   },
@@ -7561,6 +7905,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SurfaceSnapshot {\n    readonly generation: number;\n    readonly tree: readonly SerializedNode[] | null;\n}',
   },
   {
+    name: 'SwingPoint',
+    declaration: 'export type SwingPoint = {\n    readonly t: number;\n    readonly price: number;\n};',
+  },
+  {
     name: 'SystemMessage',
     declaration: 'export interface SystemMessage extends MessageBase {\n    readonly role: \'system\';\n    readonly source: MessageSourceMap[\'system-prompt\'];\n}',
   },
@@ -7733,6 +8081,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TimedUserQuestionResult = AskUserQuestionAnswer | {\n    pending: true;\n    callId: ToolCallId;\n};',
   },
   {
+    name: 'Timeframe',
+    declaration: 'export type Timeframe = \'1m\' | \'5m\' | \'15m\' | \'1h\' | \'4h\' | \'1D\' | \'1W\';',
+  },
+  {
+    name: 'TimeInForce',
+    declaration: 'export type TimeInForce = \'day\' | \'gtc\' | \'ioc\';',
+  },
+  {
     name: 'TimeOutOfRangeError',
     declaration: 'export interface TimeOutOfRangeError {\n    readonly code: \'time_out_of_range\';\n    readonly message: string;\n}',
   },
@@ -7903,6 +8259,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolUseSummary',
     declaration: 'export interface ToolUseSummary {\n    tool_use_id: string;\n    tool: string;\n    input: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'TradingMode',
+    declaration: 'export type TradingMode = \'paper\' | \'live\';',
+  },
+  {
+    name: 'TradingSymbol',
+    declaration: 'export interface TradingSymbol {\n    readonly assetClass: AssetClass;\n    readonly ticker: string;\n}',
   },
   {
     name: 'Transcript',
@@ -8079,6 +8443,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends MessageBase {\n    readonly role: \'user\';\n}',
+  },
+  {
+    name: 'VenueStatus',
+    declaration: 'export type VenueStatus = \'unconfigured\' | \'ready\' | \'halted\' | \'blocked\';',
   },
   {
     name: 'VerifiedWebhookDelivery',

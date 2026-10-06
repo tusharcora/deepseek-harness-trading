@@ -1,6 +1,7 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for trading.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/trading.md
-trading.md: 0c7b7b3d7b7d93e206a65a3691df12d122160deb
-trading.zh.md: 2d7d8f3bc50bcca7f5049fb56b85e62f196bbef1
+/trading:
+  en: 379b39937b9602f3
+  zh: 6e67c0ed990cb721
