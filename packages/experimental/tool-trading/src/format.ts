@@ -43,6 +43,7 @@ export function compact<T extends object>(value: { readonly [K in keyof T]-?: T[
 }
 
 /**
+ * Format dollars for model-facing text.
  * @param value - dollars.
  * @returns `$1,234.56`.
  */
@@ -67,6 +68,7 @@ const prices = (limitPrice: number | undefined, stopPrice: number | undefined): 
 const percent = (fraction: number): string => `${Number((fraction * 100).toFixed(2))}%`
 
 /**
+ * Describe a proposed order in one line.
  * @param order - an order as proposed.
  * @returns `Buy 0.0002 BTC/USD market gtc`.
  */
@@ -118,6 +120,7 @@ export function proposalSummary(proposal: TradingOrderProposal, tolerance: numbe
 }
 
 /**
+ * The approval reason for a cancellation proposal.
  * @param proposal - the checked cancellation.
  * @returns the approval reason for a cancellation.
  */
@@ -127,6 +130,7 @@ export function cancelSummary(proposal: TradingCancelProposal): string {
 }
 
 /**
+ * The fill notice injected into the proposing agent.
  * @param fill - one recorded fill.
  * @returns the message the proposing agent receives with its next request.
  */
@@ -159,6 +163,7 @@ export function failureOf(error: unknown): { readonly outcome: 'failed' | 'unkno
 }
 
 /**
+ * Whether the broker refused a submission for insufficient balance.
  * @param error - a submission failure.
  * @returns whether the broker refused for insufficient balance (coins from a fill not yet released).
  */
@@ -167,6 +172,7 @@ export function isInsufficientBalance(error: unknown): boolean {
 }
 
 /**
+ * Render a `get_quote` result.
  * @param report - `get_quote` result.
  * @returns model-facing text.
  */
@@ -177,6 +183,7 @@ export function renderQuote(report: QuoteReport): string {
 }
 
 /**
+ * Render a `get_account` result.
  * @param report - `get_account` result.
  * @returns model-facing text.
  */
@@ -187,6 +194,7 @@ export function renderAccount(report: AccountReport): string {
 }
 
 /**
+ * Render a `get_positions` result.
  * @param rows - `get_positions` result.
  * @returns model-facing text, one line per position.
  */
@@ -210,6 +218,7 @@ function journalRow(row: JournalRow): string {
 }
 
 /**
+ * Render a `list_orders` result.
  * @param report - `list_orders` result.
  * @returns model-facing text: open broker orders, then today's desk orders.
  */
@@ -221,6 +230,7 @@ export function renderOrders(report: OrdersReport): string {
 }
 
 /**
+ * Render a `place_order` or `cancel_order` result.
  * @param report - `place_order` or `cancel_order` result.
  * @returns model-facing text.
  */

@@ -204,6 +204,8 @@ flowchart LR
   pkg_experimental_trading_venue["experimental-trading-venue"]
   svc_tradingVenue["ctx.tradingVenue<br/>Trading venue"]
   pkg_experimental_trading_alpaca["experimental-trading-alpaca"]
+  pkg_experimental_tool_trading["experimental-tool-trading"]
+  svc_tradingExecutor["ctx.tradingExecutor<br/>Trading order executor"]
   pkg_inspector["inspector"]
   svc_inspector["ctx.inspector<br/>Cross-realm runtime inspection"]
   pkg_jobs["jobs"]
@@ -282,6 +284,7 @@ flowchart LR
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
+  pkg_experimental_tool_trading --> svc_tradingExecutor
   pkg_experimental_trading_alpaca --> svc_tradingVenue
   pkg_experimental_trading_venue --> svc_tradingVenue
   pkg_file_reference --> svc_fileReferences
@@ -496,6 +499,8 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tradingExecutor --> pkg_experimental_tool_trading
+  svc_tradingVenue --> pkg_experimental_tool_trading
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -577,7 +582,8 @@ flowchart LR
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | The basic backend consumes post-step pressure and request-error recovery events; there is no model-facing compact tool. |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route. |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team), [`experimental-client-ui-agent-team`](../packages/experimental/client-ui-agent-team) | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, continuable-child lifecycle, and generated Team Remote methods; tool-agent-team contributes model controls and client-ui-agent-team mounts the browser contribution. |
-| `ctx.tradingVenue` | `seam` | [`experimental-trading-venue`](../packages/experimental/trading-venue) | [`experimental-trading-alpaca`](../packages/experimental/trading-alpaca) | - | - | Account reads, market data, order submission, Halt, and order updates for the trading desk; the Alpaca provider owns broker access and account safety. |
+| `ctx.tradingVenue` | `seam` | [`experimental-trading-venue`](../packages/experimental/trading-venue) | [`experimental-trading-alpaca`](../packages/experimental/trading-alpaca) | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | Account reads, market data, order submission, Halt, and order updates for the trading desk; the Alpaca provider owns broker access and account safety. |
+| `ctx.tradingExecutor` | `core` | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | Validates, risk-checks, reserves, and records orders, then re-checks and submits them over ctx.tradingVenue after the user approves; the seven trading tools and the MCP endpoint call it. |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | Owns the Worker-hosted CDP target and the transport-independent Host and Client observation and Cordis-tree query API. |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs) | - | Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |

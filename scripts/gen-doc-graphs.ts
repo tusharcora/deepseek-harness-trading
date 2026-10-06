@@ -625,7 +625,17 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Trading venue',
     mode: 'seam',
     implementations: ['experimental-trading-alpaca'],
+    consumers: ['experimental-tool-trading'],
     note: 'Account reads, market data, order submission, Halt, and order updates for the trading desk; the Alpaca provider owns broker access and account safety.',
+  },
+  {
+    key: 'tradingExecutor',
+    pkg: 'experimental-tool-trading',
+    title: 'Trading order executor',
+    mode: 'core',
+    consumers: ['experimental-tool-trading'],
+    note: 'Validates, risk-checks, reserves, and records orders, then re-checks and submits them over ctx.tradingVenue after the '
+      + 'user approves; the seven trading tools and the MCP endpoint call it.',
   },
   {
     key: 'inspector',

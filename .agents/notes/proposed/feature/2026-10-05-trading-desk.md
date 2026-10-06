@@ -26,7 +26,7 @@ All packages are `@deepseek-ai/dsh-experimental-*`, published by default under `
 | Package | Responsibility | Exposes |
 |---|---|---|
 | `trading` | Shared types and pure logic; no I/O | `Symbol`, `Bar`, `Timeframe`, `Quote`, `Order`, `Position`, `Account` types; venue-facing types (account, position, broker order, order update); indicators (SMA, EMA, RSI, MACD, Bollinger); trade-to-candle aggregation; `checkRisk` |
-| `trading-venue` | Service Definition for a trading venue | Abstract `TradingVenueGateway` service at `ctx.tradingVenue` (account, positions, orders, assets, quotes, bars, submit, cancel, close, flatten, Halt, order-update subscription) and `VenueError` |
+| `trading-venue` | Service Definition for a trading venue | Abstract `TradingVenueGateway` service at `ctx.tradingVenue` (account, positions, orders, assets, quotes, bars, submit, cancel, close, flatten, Halt, order-update subscription, order lookup by client order id, account mode) and `VenueError` |
 | `trading-alpaca` | Alpaca provider of the trading venue | Registers `ctx.tradingVenue`; REST history and order APIs; one shared WebSocket per asset class; keys via `ctx.credentials`; `mode: paper \| live`, default `paper` |
 | `tool-trading` | Model-facing tools and the order executor | `get_quote`, `get_bars`, `get_account`, `get_positions`, `list_orders`, `place_order`, `cancel_order`; risk check, approval, re-check, idempotent submit, journal |
 | `trading-gateway` | Typed remote service for the client | `bars(symbol, tf, before?)`, `streamBars(symbol, tf)`, `streamAccount()`, watchlist get/set, halt/flatten |

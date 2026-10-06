@@ -40,6 +40,8 @@ The experimental group contains prototype capabilities whose contracts can chang
 | [`trading`](trading/README.md) | Browser-safe trading domain library: symbols, indicators, live candles, order validation, risk checks, and price caps | library — no ctx key |
 | [`trading-alpaca`](trading-alpaca/README.md) | Alpaca provider for the trading venue: paper and live trading, account safety, order updates | provides `ctx.tradingVenue` |
 | [`trading-venue`](trading-venue/README.md) | Service Definition for a trading venue | `ctx.tradingVenue` |
+| [`tool-trading`](tool-trading/README.md) | Trading order executor and the seven trading tools: proposals, approval, re-check, idempotent submit, journal, fills | provides `ctx.tradingExecutor` |
+| [`bundle-trading`](bundle-trading/README.md) | Experimental trading profile layer and the `trader` agent preset | profile bundle — no ctx key |
 | [`tool-agent-team`](tool-agent-team/README.md) | Nine tools that let the model create, message, and coordinate teammates | registers scoped tools on `ctx.tools` |
 | [`webworker-packer`](webworker-packer/README.md) | Builds the gzip-compressed VFS image consumed by the browser worker preview | library and CLI — no ctx key |
 | [`webworker-runtime`](webworker-runtime/README.md) | Runs the harness plugin tree inside a dedicated browser worker | library and worker entry — no ctx key |

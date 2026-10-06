@@ -40,6 +40,8 @@ kind: "package-group"
 | [`trading`](trading/README.zh.md) | 浏览器安全的交易领域库：标的、技术指标、实时 K 线、订单校验、风险检查与价格上限 | 库——无 ctx key |
 | [`trading-alpaca`](trading-alpaca/README.md) | 交易场所的 Alpaca 提供方：模拟盘与实盘交易、账户安全、订单更新 | 提供 `ctx.tradingVenue` |
 | [`trading-venue`](trading-venue/README.md) | 交易场所的 Service Definition | `ctx.tradingVenue` |
+| [`tool-trading`](tool-trading/README.md) | 交易下单执行器与七个交易工具：提议、审批、复核、幂等提交、日志、成交 | 提供 `ctx.tradingExecutor` |
+| [`bundle-trading`](bundle-trading/README.md) | 实验性交易 profile 层与 `trader` Agent 预设 | profile bundle——无 ctx key |
 | [`tool-agent-team`](tool-agent-team/README.zh.md) | 让模型创建、发消息与协调 teammate 的九个工具 | 按作用域注册工具到 `ctx.tools` |
 | [`webworker-packer`](webworker-packer/README.zh.md) | 构建浏览器 worker 预览所消费的 gzip 压缩虚拟文件系统（VFS）镜像 | 库与 CLI（命令行界面），不使用 ctx key |
 | [`webworker-runtime`](webworker-runtime/README.zh.md) | 在专用浏览器 worker 中运行 harness 插件树 | 库与 worker 入口，不使用 ctx key |

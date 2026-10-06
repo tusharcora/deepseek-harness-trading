@@ -1,0 +1,976 @@
+{
+  "formatVersion": 1,
+  "roots": [
+    {
+      "key": "event:trading/fill",
+      "kind": "event",
+      "event": "trading/fill",
+      "surface": false,
+      "digest": "001494b3088098f5cc4bea0df40f134f454e7a85f37f345fc2d50b3367115eab",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 14,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 15,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "fillPrice",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "fillQty",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "filledAvgPrice",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "filledQty",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "orderId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "proposalId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "side",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "status",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "t",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "ticker",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              5,
+              6
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "buy"
+          },
+          {
+            "kind": "literal",
+            "value": "sell"
+          },
+          {
+            "kind": "union",
+            "types": [
+              8,
+              9,
+              10,
+              11,
+              12,
+              13
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "canceled"
+          },
+          {
+            "kind": "literal",
+            "value": "open"
+          },
+          {
+            "kind": "literal",
+            "value": "partially_filled"
+          },
+          {
+            "kind": "literal",
+            "value": "rejected"
+          },
+          {
+            "kind": "literal",
+            "value": "expired"
+          },
+          {
+            "kind": "literal",
+            "value": "filled"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "trading/fill"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:trading/order",
+      "kind": "event",
+      "event": "trading/order",
+      "surface": false,
+      "digest": "6ef40fbf2c8b71fb169e62952b12383b9ec42c0f086bc9e3b83015335dd615ef",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 15,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 16,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 16,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 17,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "message",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "orderId",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "outcome",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "proposalId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "status",
+                "type": 8,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "cancelled"
+          },
+          {
+            "kind": "literal",
+            "value": "failed"
+          },
+          {
+            "kind": "literal",
+            "value": "submitted"
+          },
+          {
+            "kind": "literal",
+            "value": "unknown"
+          },
+          {
+            "kind": "union",
+            "types": [
+              9,
+              10,
+              11,
+              12,
+              13,
+              14
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "canceled"
+          },
+          {
+            "kind": "literal",
+            "value": "expired"
+          },
+          {
+            "kind": "literal",
+            "value": "filled"
+          },
+          {
+            "kind": "literal",
+            "value": "open"
+          },
+          {
+            "kind": "literal",
+            "value": "partially_filled"
+          },
+          {
+            "kind": "literal",
+            "value": "rejected"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "trading/order"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:trading/proposal",
+      "kind": "event",
+      "event": "trading/proposal",
+      "surface": false,
+      "digest": "24bd74b50348acfaa583b692e03dabaa6eb7bf5a63ce85b3362bbf7af285cf27",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 60,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 61,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              2,
+              48
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "callId",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "checks",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "equityPct",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "estimatedNotional",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 21,
+                "optional": false
+              },
+              {
+                "name": "marketOpen",
+                "type": 19,
+                "optional": false
+              },
+              {
+                "name": "mode",
+                "type": 22,
+                "optional": false
+              },
+              {
+                "name": "order",
+                "type": 25,
+                "optional": false
+              },
+              {
+                "name": "plan",
+                "type": 43,
+                "optional": false
+              },
+              {
+                "name": "priceIncrement",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "proposalId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "quote",
+                "type": 44,
+                "optional": false
+              },
+              {
+                "name": "rationale",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "reduceOnly",
+                "type": 19,
+                "optional": false
+              },
+              {
+                "name": "referencePrice",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "source",
+                "type": 45,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 5
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "detail",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "ok",
+                "type": 19,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "order-notional"
+          },
+          {
+            "kind": "literal",
+            "value": "orders-per-day"
+          },
+          {
+            "kind": "literal",
+            "value": "position-size"
+          },
+          {
+            "kind": "literal",
+            "value": "quote"
+          },
+          {
+            "kind": "literal",
+            "value": "shorting"
+          },
+          {
+            "kind": "literal",
+            "value": "size"
+          },
+          {
+            "kind": "literal",
+            "value": "stale-quote"
+          },
+          {
+            "kind": "literal",
+            "value": "stop-type"
+          },
+          {
+            "kind": "literal",
+            "value": "symbol-list"
+          },
+          {
+            "kind": "literal",
+            "value": "cash"
+          },
+          {
+            "kind": "literal",
+            "value": "daily-loss"
+          },
+          {
+            "kind": "literal",
+            "value": "halted"
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "order"
+          },
+          {
+            "kind": "union",
+            "types": [
+              23,
+              24
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "paper"
+          },
+          {
+            "kind": "literal",
+            "value": "live"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "bracket",
+                "type": 26,
+                "optional": true
+              },
+              {
+                "name": "limitPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "notional",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "qty",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "side",
+                "type": 27,
+                "optional": false
+              },
+              {
+                "name": "stopPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "symbol",
+                "type": 30,
+                "optional": false
+              },
+              {
+                "name": "timeInForce",
+                "type": 34,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 38,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "stopLoss",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "takeProfit",
+                "type": 20,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              28,
+              29
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "buy"
+          },
+          {
+            "kind": "literal",
+            "value": "sell"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "assetClass",
+                "type": 31,
+                "optional": false
+              },
+              {
+                "name": "ticker",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              32,
+              33
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "equity"
+          },
+          {
+            "kind": "literal",
+            "value": "crypto"
+          },
+          {
+            "kind": "union",
+            "types": [
+              35,
+              36,
+              37
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "gtc"
+          },
+          {
+            "kind": "literal",
+            "value": "day"
+          },
+          {
+            "kind": "literal",
+            "value": "ioc"
+          },
+          {
+            "kind": "union",
+            "types": [
+              39,
+              40,
+              41,
+              42
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "market"
+          },
+          {
+            "kind": "literal",
+            "value": "stop"
+          },
+          {
+            "kind": "literal",
+            "value": "stop_limit"
+          },
+          {
+            "kind": "literal",
+            "value": "limit"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "capped",
+                "type": 19,
+                "optional": false
+              },
+              {
+                "name": "limitPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "stopPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "timeInForce",
+                "type": 34,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 38,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "ask",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "bid",
+                "type": 20,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              46,
+              47
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "claude-code-mcp"
+          },
+          {
+            "kind": "literal",
+            "value": "dsh-agent"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "callId",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "kind",
+                "type": 49,
+                "optional": false
+              },
+              {
+                "name": "mode",
+                "type": 22,
+                "optional": false
+              },
+              {
+                "name": "order",
+                "type": 50,
+                "optional": false
+              },
+              {
+                "name": "proposalId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "rationale",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "source",
+                "type": 45,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "cancel"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "clientOrderId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "filledAvgPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "filledQty",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "limitPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "notional",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "qty",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "side",
+                "type": 27,
+                "optional": false
+              },
+              {
+                "name": "status",
+                "type": 51,
+                "optional": false
+              },
+              {
+                "name": "stopPrice",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "submittedAt",
+                "type": 20,
+                "optional": true
+              },
+              {
+                "name": "symbol",
+                "type": 30,
+                "optional": false
+              },
+              {
+                "name": "timeInForce",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 58,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              52,
+              53,
+              54,
+              55,
+              56,
+              57
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "open"
+          },
+          {
+            "kind": "literal",
+            "value": "partially_filled"
+          },
+          {
+            "kind": "literal",
+            "value": "rejected"
+          },
+          {
+            "kind": "literal",
+            "value": "canceled"
+          },
+          {
+            "kind": "literal",
+            "value": "expired"
+          },
+          {
+            "kind": "literal",
+            "value": "filled"
+          },
+          {
+            "kind": "union",
+            "types": [
+              39,
+              40,
+              41,
+              42,
+              59
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "other"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "trading/proposal"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

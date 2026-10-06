@@ -65,6 +65,7 @@ export class ProposalBook {
   }
 
   /**
+   * Look up an unsettled proposal.
    * @param id - proposal id.
    * @returns the unsettled entry.
    */
@@ -73,6 +74,7 @@ export class ProposalBook {
   }
 
   /**
+   * Look up the proposal an in-app tool call created.
    * @param sessionId - session of the call.
    * @param callId - in-app tool call id.
    * @returns the unsettled proposal created for that call.
@@ -171,6 +173,7 @@ export class ProposalBook {
   }
 
   /**
+   * Sum the cash that pending buy proposals would commit.
    * @param excluding - proposal to leave out.
    * @returns the estimated value of pending buy proposals, all instruments.
    */
@@ -179,6 +182,7 @@ export class ProposalBook {
   }
 
   /**
+   * Count pending order proposals toward the daily order limit.
    * @param excluding - proposal to leave out.
    * @returns the number of pending order proposals.
    */

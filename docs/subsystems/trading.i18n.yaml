@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/trading.md
-trading.md: 2871793f75b407b2e8907734aa9bdeccb7075bd5
-trading.zh.md: 73eb63194847cde9cd3df950626cc403a56b7b67
+trading.md: 327874a65e71a5efcc2b8ae355bf82140949a5f7
+trading.zh.md: fcdc320a7f0c363977468fd0be08633a049db713

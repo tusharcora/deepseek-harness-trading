@@ -814,6 +814,48 @@ export interface Config {
 
 Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-experimental-tool-trading"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-trading`
+
+Requires: `tradingVenue` · `tools` · `storageDomain` · `sessions` · `agents`
+
+```ts config-catalog
+/** Executor configuration. */
+export interface Config {
+  /** Largest estimated order value in dollars. */
+  maxOrderNotional: number
+  /** Largest position value as a fraction of equity (`0.2` = 20%), counting open orders and pending proposals. */
+  maxPositionPct: number
+  /** Day loss as a fraction of the previous close's equity at which exposure-increasing orders stop. */
+  dailyLossPct: number
+  /** Desk orders per trading day, counting pending proposals. */
+  maxOrdersPerDay: number
+  /** Whether sells may open or extend a short position. */
+  allowShort: boolean
+  /** Whether buys may exceed cash. */
+  allowMargin: boolean
+  /** Tickers allowed; empty allows every ticker. */
+  allowlist: string[]
+  /** Tickers never allowed. */
+  denylist: string[]
+  /** Quote age above which market orders are refused while the market is open, milliseconds. */
+  staleQuoteMs: number
+  /** Allowed price drift between approval and submission, and the market-order price cap, as a fraction. */
+  driftTolerance: number
+  /** Bars `get_bars` returns when the call names no limit. */
+  barsDefault: number
+  /** Most bars `get_bars` returns. */
+  barsCap: number
+  /** Interval between re-reads of open and in-flight orders, milliseconds. */
+  reconcileMs: number
+  /** Waits before retrying a crypto exit the broker rejected for insufficient balance right after a fill; one retry each. */
+  exitRetryMs: number[]
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/config.ts:11`](../packages/experimental/tool-trading/src/config.ts)
+
 <a id="deepseek-aidsh-experimental-trading-alpaca"></a>
 
 ## `@deepseek-ai/dsh-experimental-trading-alpaca`
@@ -858,7 +900,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/experimental/trading-alpaca/src/config.ts:9`](../packages/experimental/trading-alpaca/src/config.ts)
+Source: [`packages/experimental/trading-alpaca/src/config.ts:10`](../packages/experimental/trading-alpaca/src/config.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -3771,6 +3813,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-experimental-agent-team-profile` ([`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile` ([`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
+- `@deepseek-ai/dsh-experimental-bundle-trading` ([`packages/experimental/bundle-trading/src/index.ts`](../packages/experimental/bundle-trading/src/index.ts))
 - `@deepseek-ai/dsh-experimental-trading` ([`packages/experimental/trading/src/index.ts`](../packages/experimental/trading/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer` ([`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-runtime` ([`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts))

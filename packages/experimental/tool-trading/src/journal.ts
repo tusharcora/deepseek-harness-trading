@@ -69,6 +69,7 @@ export class Journal {
   }
 
   /**
+   * Read one journal entry.
    * @param id - proposal id.
    * @returns the entry.
    */
@@ -77,6 +78,7 @@ export class Journal {
   }
 
   /**
+   * Find the entry of the order sent with a client order id.
    * @param id - client order id sent to the broker.
    * @returns the entry of the proposal that sent it.
    */
@@ -106,7 +108,10 @@ export class Journal {
     return this.domain.table('entries').update(id, current => ({ ...current, ...patch, updatedAt: now }))
   }
 
-  /** @returns order entries the broker may still be working: submitted, partially filled, or of unknown outcome. */
+  /**
+   * List the orders reconciliation re-reads.
+   * @returns order entries the broker may still be working: submitted, partially filled, or of unknown outcome.
+   */
   inFlight(): InFlightEntry[] {
     return [...this.domain.table('entries').entries()].flatMap(([, entry]) =>
       entry.kind === 'order' && entry.clientOrderId !== undefined && IN_FLIGHT.has(entry.status)
@@ -115,6 +120,7 @@ export class Journal {
   }
 
   /**
+   * List one trading day's entries.
    * @param day - trading day, `YYYY-MM-DD`.
    * @returns that day's entries, oldest first.
    */
@@ -125,6 +131,7 @@ export class Journal {
   }
 
   /**
+   * Count the desk orders that reached the broker on one trading day.
    * @param day - trading day, `YYYY-MM-DD`.
    * @returns how many desk orders reached the broker that day.
    */

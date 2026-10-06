@@ -206,6 +206,8 @@ flowchart LR
   pkg_experimental_trading_venue["experimental-trading-venue"]
   svc_tradingVenue["ctx.tradingVenue<br/>Trading venue"]
   pkg_experimental_trading_alpaca["experimental-trading-alpaca"]
+  pkg_experimental_tool_trading["experimental-tool-trading"]
+  svc_tradingExecutor["ctx.tradingExecutor<br/>Trading order executor"]
   pkg_inspector["inspector"]
   svc_inspector["ctx.inspector<br/>Cross-realm runtime inspection"]
   pkg_jobs["jobs"]
@@ -284,6 +286,7 @@ flowchart LR
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
+  pkg_experimental_tool_trading --> svc_tradingExecutor
   pkg_experimental_trading_alpaca --> svc_tradingVenue
   pkg_experimental_trading_venue --> svc_tradingVenue
   pkg_file_reference --> svc_fileReferences
@@ -498,6 +501,8 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tradingExecutor --> pkg_experimental_tool_trading
+  svc_tradingVenue --> pkg_experimental_tool_trading
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -579,7 +584,8 @@ flowchart LR
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | 基础后端消费步骤后的压力事件和请求错误恢复事件；不存在面向模型的压缩工具。 |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 提供方实现传输；该服务还负责可选的、基于 Activation 的延续编排，tool-subagent 选择一次性或可延续委派，tool-subagent-control 传递后续消息，而 tool-ralph 要求一条全新的结构化输出路由。 |
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team), [`experimental-client-ui-agent-team`](../packages/experimental/client-ui-agent-team) | - | 负责隐式 Root roster、持久 peer mailbox、共享任务 DAG、continuable child 生命周期与生成式 Team Remote method；tool-agent-team 提供模型控制工具，client-ui-agent-team 挂载浏览器 contribution。 |
-| `ctx.tradingVenue` | `seam` | [`experimental-trading-venue`](../packages/experimental/trading-venue) | [`experimental-trading-alpaca`](../packages/experimental/trading-alpaca) | - | - | 交易台的账户读取、行情数据、订单提交、Halt 与订单更新；Alpaca 提供方负责券商访问与账户安全。 |
+| `ctx.tradingVenue` | `seam` | [`experimental-trading-venue`](../packages/experimental/trading-venue) | [`experimental-trading-alpaca`](../packages/experimental/trading-alpaca) | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | 交易台的账户读取、行情数据、订单提交、Halt 与订单更新；Alpaca 提供方负责券商访问与账户安全。 |
+| `ctx.tradingExecutor` | `core` | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | [`experimental-tool-trading`](../packages/experimental/tool-trading) | - | 校验、风险检查、预留并记录订单，在用户批准后复核并经 ctx.tradingVenue 提交；七个交易工具与 MCP 端点调用它。 |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | 负责 Worker 托管的 CDP target，以及独立于传输的 Host 和 Client observation 与 Cordis tree query API。 |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs) | - | 生产方（后台 bash、PTY 发送和 subagent 委派）登记正在运行的工作；tool-jobs 是面向模型的控制器，用于读取、列出和终止这些工作；jobs-local 是进程本地注册表。 |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | 搜索和抓取提供方注册到同一个 ctx.web seam；tool-web 负责稳定的面向模型名称。 |

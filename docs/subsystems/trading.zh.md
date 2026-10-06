@@ -2,7 +2,7 @@
 
 [English](trading.md) | 中文
 
-实验性交易台只通过 `ctx.tradingVenue` 上的交易场所服务访问券商：账户读取、行情数据、订单提交、Halt 与订单更新。[`@deepseek-ai/dsh-experimental-trading-venue`](../../packages/experimental/trading-venue/README.md) 定义该服务、`VenueError` 与 `trading/venue-status` 事件；[`@deepseek-ai/dsh-experimental-trading-alpaca`](../../packages/experimental/trading-alpaca/README.md) 在 Alpaca 上提供它，并负责账户安全与持久化的 Halt。设计见[交易台 Agent Note](../../.agents/notes/proposed/feature/2026-10-05-trading-desk.zh.md)。
+实验性交易台只通过 `ctx.tradingVenue` 上的交易场所服务访问券商：账户读取、行情数据、订单提交、Halt 与订单更新。[`@deepseek-ai/dsh-experimental-trading-venue`](../../packages/experimental/trading-venue/README.md) 定义该服务、`VenueError` 与 `trading/venue-status` 事件；[`@deepseek-ai/dsh-experimental-trading-alpaca`](../../packages/experimental/trading-alpaca/README.md) 在 Alpaca 上提供它，并负责账户安全与持久化的 Halt。设计见[交易台 Agent Note](../../.agents/notes/proposed/feature/2026-10-05-trading-desk.zh.md)。[`@deepseek-ai/dsh-experimental-tool-trading`](../../packages/experimental/tool-trading/README.md) 在 `ctx.tradingExecutor` 上提供下单执行器，它是交易工具通往券商的唯一路径。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -100,6 +100,16 @@ proposalForCall(sessionId: SessionId, callId: ToolCallId): ProposalId | undefine
  * @throws Error with a model-facing reason.
  */
 async execute(proposalId: ProposalId, sessionId: SessionId): Promise<OrderReport>
+
+/**
+ * Re-read the broker's open orders and look up every journaled order still in flight, recording fills the stream did
+ * not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs
+ * without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed
+ * for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker
+ * until then); nothing is resubmitted.
+ * @returns when every in-flight order was checked.
+ */
+async reconcile(): Promise<void>
 ```
 
 Types: [SessionId](core.zh.md) · [ToolCallId](core.zh.md)
