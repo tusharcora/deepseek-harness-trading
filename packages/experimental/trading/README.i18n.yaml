@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/trading/README.md
-README.md: 826f2285b092dece55df44b249f6ea96c9c73958
-README.zh.md: 37e37125ec9511121fceab928b0c35b7d5798d05
+/:
+  en: adc5ab91a73dc6f2
+  zh: 16cc2ec46938e996
+/deepseek-ai-dsh-experimental-trading:
+  en: 09904fa75318f219
+  zh: ddf2cb5e12f346d3
+/deepseek-ai-dsh-experimental-trading/summary:
+  en: ccc047732bffc28e
+  zh: 2541ba004a9a7481
+/deepseek-ai-dsh-experimental-trading/table-of-contents:
+  en: 80b31a934611cb4a
+  zh: 05f3f7f9cb2fd881
+/deepseek-ai-dsh-experimental-trading/use-this-package:
+  en: 0c8c9dcafbcfe47e
+  zh: 31047c327dda49ec
+/deepseek-ai-dsh-experimental-trading/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 4ed0861911abaf5d
+/deepseek-ai-dsh-experimental-trading/understand-the-implementation/source-map:
+  en: 47a5d1c18942aa21
+  zh: c0ab2c6da191f5cf
+/deepseek-ai-dsh-experimental-trading/understand-the-implementation/why-reduce-only-is-netted:
+  en: 15af10fb8919ef25
+  zh: 80f064451d159c5c
+/deepseek-ai-dsh-experimental-trading/understand-the-implementation/why-caps-follow-the-side:
+  en: d972793f5cfd81cc
+  zh: e42540c8bc0a000d
+/deepseek-ai-dsh-experimental-trading/further-exploration:
+  en: 9df749d3f30b2639
+  zh: bbdc9b7667b33cf8
+/deepseek-ai-dsh-experimental-trading/known-limitations-and-deferred-work:
+  en: 6e81bd0c59caea75
+  zh: c3c5585d144358ba
+/deepseek-ai-dsh-experimental-trading/dev-note:
+  en: 5de1d6304e00c58f
+  zh: 689e91cd30ed53b4

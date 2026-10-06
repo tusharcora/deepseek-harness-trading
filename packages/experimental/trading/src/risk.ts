@@ -171,8 +171,16 @@ export function checkRisk(order: OrderRequest, snapshot: RiskSnapshot, limits: R
     add('symbol-list', listed && !denied, listDetail)
 
     const age = snapshot.now - snapshot.quote.t
-    const stale = order.type === 'market' && snapshot.marketOpen && !(age <= limits.staleQuoteMs)
-    add('stale-quote', !stale, Number.isFinite(age) ? `quote is ${Math.round(age / 1000)} s old` : 'quote time is unknown')
+    const timed = order.type === 'market' && snapshot.marketOpen
+    const stale = timed && !(age <= limits.staleQuoteMs)
+    const window = `${Math.round(limits.staleQuoteMs / 1000)} s`
+    const ageDetail = !Number.isFinite(age)
+      ? 'quote time is unknown'
+      : stale ? `quote is ${Math.round(age / 1000)} s old (max ${window})` : `quote is at most ${window} old`
+    const staleDetail = order.type !== 'market'
+      ? `${order.type} orders do not need a fresh quote`
+      : snapshot.marketOpen ? ageDetail : 'market closed; the quote age is not checked'
+    add('stale-quote', !stale, staleDetail)
 
     add('stop-type', order.type !== 'stop', order.type === 'stop' ? 'orders that add exposure must use stop_limit' : `${order.type} order`)
 

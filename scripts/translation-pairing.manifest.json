@@ -8,6 +8,10 @@
     "docs/cordis-api/inherited.md",
     "docs/i18n/style-samples.md",
     "docs/i18n/terminology.md",
-    "docs/i18n/translation-prompt.md"
+    "docs/i18n/translation-prompt.md",
+    "packages/experimental/bundle-trading/README.md",
+    "packages/experimental/tool-trading/README.md",
+    "packages/experimental/trading-alpaca/README.md",
+    "packages/experimental/trading-venue/README.md"
   ]
 }

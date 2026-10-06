@@ -30,7 +30,7 @@ kind: "package-reference"
 import { checkRisk, parseSymbol, planSubmission, rsi, validateOrder } from '@deepseek-ai/dsh-experimental-trading'
 ```
 
-一笔订单依次经过三次调用。`validateOrder(order, asset)` 返回订单违反的券商规则。`checkRisk(order, snapshot, limits)` 返回每项限额检查、订单是否只减少持仓，以及审批卡片上显示的参考价格与预估金额。`planSubmission(order, approvedPrice, tolerance, reduceOnly, priceIncrement)` 返回发往券商的订单类型、价格与有效期：增加敞口的按数量市价单会变为限价单，买入时上限为批准价格加容差，卖出时为批准价格减容差；平仓单和名义金额订单保持为市价单。
+一笔订单依次经过三次调用。`validateOrder(order, asset)` 返回订单违反的券商规则，包括名义金额订单或带价格（`limit`、`stop_limit`）的按数量订单低于资产 `minNotional` 最低订单金额的情况；按数量市价单在取得报价前金额未知，由券商执行其最低金额限制。`checkRisk(order, snapshot, limits)` 返回每项限额检查、订单是否只减少持仓，以及审批卡片上显示的参考价格与预估金额。`planSubmission(order, approvedPrice, tolerance, reduceOnly, priceIncrement)` 返回发往券商的订单类型、价格与有效期：增加敞口的按数量市价单会变为限价单，买入时上限为批准价格加容差，卖出时为批准价格减容差；平仓单和名义金额订单保持为市价单。
 
 技术指标函数返回与输入对齐的序列，预热期内为 `null`。`applyTrade(lastBar, trade, timeframe)` 把一笔实时成交折叠进正在形成的 K 线，对属于更早时间桶的成交返回 `undefined`。
 

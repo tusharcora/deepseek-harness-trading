@@ -34,6 +34,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/start',
   'compaction/summary',
   'deliverables/presented',
+  'developer/message',
   'feedback/message-delete',
   'feedback/message-put',
   'feedback/record',
@@ -73,10 +74,14 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'tool/ptc-dispatch',
   'tool/ptc-dispatch-start',
   'tool/result',
+  'trading/fill',
+  'trading/order',
+  'trading/proposal',
   'turn/end',
   'turn/start',
   'user/message',
   'web/deepseek-search-llm-request',
+  'workspace/changes',
 ])
 
 /** Event types whose model-visible effects require an explicit pure interpreter. */

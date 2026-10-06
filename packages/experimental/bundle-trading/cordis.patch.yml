@@ -1,0 +1,136 @@
+# Experimental trading profile layer. Apply after dsh-base and dsh-web-app:
+#
+#   dsh --profile trading --from-default-profile web
+#   dsh plugin --profile trading add @deepseek-ai/dsh-experimental-bundle-trading
+#
+# The trader agent reaches the broker only through the trading tools, whose orders the
+# user approves one by one. This layer removes the other ways the in-app agent could reach
+# it (Claude Code in the Terminal tab can still read the keys):
+# every preset except `trader` (and with them shell, file, code, workflow, delegation,
+# and extension tools), the MCP resource tools on the host plane, and the cordis
+# runners that let a model define Host or Client plugins. The Terminal tab stays.
+
+- id: mcp-resources
+  disabled: true
+
+- id: cordis-host-runner
+  disabled: true
+
+- id: cordis-client-runner
+  disabled: true
+
+# The Host inspect providers register only into the host runner's inspect registry.
+- id: cordis-inspect-providers
+  disabled: true
+
+# The cordis browser view runs on the client runner disabled above.
+- id: ui-cordis
+  disabled: true
+
+# Only the trader preset is selectable: the shipped preset declarations are disabled and the registry
+# defaults to `trader`. A saved default naming another preset makes new sessions fail with an error that
+# names it; choose Trader as the default in Settings to clear it.
+- id: preset-standard
+  disabled: true
+
+- id: preset-ptc
+  disabled: true
+
+- id: preset-minimal
+  disabled: true
+
+- id: preset-cordis
+  disabled: true
+
+- id: agent-preset-registry
+  config:
+    default: trader
+
+- insert:
+    # The `trader` agent preset: market analysis and order proposals only.
+    #
+    # The model receives exactly nine tools: get_quote, get_bars, get_account,
+    # get_positions, list_orders, place_order, cancel_order, web_search, and web_fetch.
+    # There is no shell, terminal, file, code, workflow, delegation, MCP, or extension
+    # tool, so the trading tools and their approval requests are the agent's only way to
+    # reach the broker. Halt and resume are the user's /trading command, never a tool.
+    - id: preset-trader
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: trader
+        name: Trader
+        description: Analyzes US stocks and crypto and proposes orders that you approve one at a time.
+        order: 1
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a trading assistant powered by the {{model}} model. You analyze US stocks and crypto pairs with the
+                trading tools and web research, and you propose orders that the user approves one at a time. Base every
+                proposal on data you fetched in this conversation and give the reason in its rationale. A refused order means
+                a risk limit applies: explain the limit instead of retrying a variant. You cannot change the risk limits or
+                resume a halted desk. Fills arrive as messages before the user's next message. You give analysis, not
+                financial advice.
+
+          - id: tool-trading
+            name: '@deepseek-ai/dsh-experimental-tool-trading/tools'
+
+          # The user's /trading command (status, halt, resume). Commands never reach the model.
+          - id: command-trading
+            name: '@deepseek-ai/dsh-experimental-tool-trading/command'
+
+          # Context compaction, as in the shipped `standard` preset: long analysis sessions need it, and it adds no
+          # model-facing tool (only the user's /compact command). `compaction-basic` reads `toolResultPrune` through
+          # `ctx.get`, so the pruner shares this realm.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # The `web` service and its search provider stay in the host composition; only the
+          # model-facing tool is per-agent. web_fetch exposes no headers or method.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+    # Paper trading. Live mode also needs DSH_TRADING_LIVE=1 at launch.
+    - id: trading-alpaca
+      name: '@deepseek-ai/dsh-experimental-trading-alpaca'
+      config:
+        mode: paper
+
+    # The order executor stays on the host plane so every order path shares one lock,
+    # one set of reservations, and one journal; its tools mount only in the trader preset.
+    - id: trading-executor
+      name: '@deepseek-ai/dsh-experimental-tool-trading'
+      config:
+        maxOrderNotional: 1000
+        maxPositionPct: 0.2
+        dailyLossPct: 0.03
+        maxOrdersPerDay: 20
+        allowShort: false
+        allowMargin: false
+        allowlist: []
+        denylist: []
+        staleQuoteMs: 30000
+        driftTolerance: 0.01
+        barsDefault: 100
+        barsCap: 500

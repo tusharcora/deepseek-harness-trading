@@ -37,6 +37,24 @@ describe('validateOrder', () => {
     ])
   })
 
+  it('enforces the broker minimum order value when the value is known', () => {
+    const tenDollars: Asset = { ...btc, minNotional: 10 }
+    const notionalBuy: OrderRequest = { symbol: btc.symbol, side: 'buy', notional: 5, type: 'market', timeInForce: 'gtc' }
+    expect(validateOrder(notionalBuy, tenDollars)).toEqual([
+      { code: 'below-minimum-value', message: 'minimum order value for BTC/USD is $10' },
+    ])
+    expect(codes({ ...notionalBuy, notional: 10 }, tenDollars)).toEqual([])
+    const limitBuy: OrderRequest = { ...cryptoBuy, qty: 0.0002, type: 'limit', limitPrice: 40_000 }
+    expect(codes(limitBuy, tenDollars)).toEqual(['below-minimum-value'])
+    expect(codes({ ...limitBuy, type: 'stop_limit', stopPrice: 40_000 }, tenDollars)).toEqual(['below-minimum-value'])
+    expect(codes({ ...limitBuy, qty: 0.0003 }, tenDollars)).toEqual([])
+    // A quantity-based market order's value is unknown here; the broker checks it.
+    expect(codes({ ...cryptoBuy, qty: 0.0001 }, tenDollars)).toEqual([])
+    // An invalid size is reported once, as a size violation.
+    expect(codes({ ...notionalBuy, notional: -5 }, tenDollars)).toEqual(['size'])
+    expect(codes(notionalBuy, btc)).toEqual([])
+  })
+
   it('matches price fields to the order type', () => {
     expect(codes({ ...cryptoBuy, type: 'limit' }, btc)).toEqual(['price-fields'])
     expect(codes({ ...cryptoBuy, limitPrice: 1 }, btc)).toEqual(['price-fields'])
