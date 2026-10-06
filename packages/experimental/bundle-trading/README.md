@@ -7,7 +7,7 @@ kind: "package-bundle"
 
 ## Summary
 
-`dsh-experimental-bundle-trading` is a published experimental profile layer that turns a Web profile built on `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` into a trading desk. Its patch adds the Alpaca venue in paper mode and the [order executor](../tool-trading/README.md), removes every other way a model could reach the broker, and makes the `trader` agent preset the only selectable preset. The trader analyzes US stocks and crypto pairs and proposes orders the user approves one at a time. Trading is paper by default; add the package explicitly to a profile, because no shipped profile enables it. It is experimental and carries no stability promise.
+`dsh-experimental-bundle-trading` is a published experimental profile layer that turns a Web profile built on `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` into a trading desk. Its patch adds the Alpaca venue in paper mode and the [order executor](../tool-trading/README.md), removes every other way the in-app agent could reach the broker, and makes the `trader` agent preset the only selectable preset. The trader analyzes US stocks and crypto pairs and proposes orders the user approves one at a time. Trading is paper by default; add the package explicitly to a profile, because no shipped profile enables it. It is experimental and carries no stability promise.
 
 ## Table of Contents
 
@@ -122,6 +122,7 @@ Stable for a given model; the `{{model}}` interpolation changes the prefix only 
 - **Saved default preset** — settings are shared under `$DSH_HOME`, so a saved `agent-presets.default` from another profile makes new sessions fail with `agent-presets: preset "<id>" not found (available: trader)` until the user picks Trader as the default or turns off mode selection in Settings.
 - **External shell-capable agents** — an agent outside this preset that has a shell, such as Claude Code in the Terminal tab, can still read the keys and trade directly; see the Agent Note's Execution boundary.
 - **Keys in a file** — the keys go in `$DSH_HOME/.credentials.yaml` until the Trading settings card arrives.
+- **File guidance without file tools** — the trader's system prompt still carries the Web app's file-output guidance and the `workspace-write` file policy line, although the trader has no file tools; Plan 4 drops them.
 - **Deferred surfaces** — the Trading panel, its gateway, and the market-data stream arrive with Plan 4; the MCP endpoint for Claude Code arrives with Plan 5.
 
 <a id="dev-note"></a>

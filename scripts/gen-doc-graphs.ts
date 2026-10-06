@@ -635,7 +635,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'core',
     consumers: ['experimental-tool-trading'],
     note: 'Validates, risk-checks, reserves, and records orders, then re-checks and submits them over ctx.tradingVenue after the '
-      + 'user approves; the seven trading tools and the MCP endpoint call it.',
+      + 'user approves; the seven trading tools call it, and proposeOrder/proposeCancel also serve the planned MCP endpoint.',
   },
   {
     key: 'inspector',

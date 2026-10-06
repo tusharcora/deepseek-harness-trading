@@ -4,7 +4,8 @@
 #   dsh plugin --profile trading add @deepseek-ai/dsh-experimental-bundle-trading
 #
 # The trader agent reaches the broker only through the trading tools, whose orders the
-# user approves one by one. This layer removes the other ways a model could reach it:
+# user approves one by one. This layer removes the other ways the in-app agent could reach
+# it (Claude Code in the Terminal tab can still read the keys):
 # every preset except `trader` (and with them shell, file, code, workflow, delegation,
 # and extension tools), the MCP resource tools on the host plane, and the cordis
 # runners that let a model define Host or Client plugins. The Terminal tab stays.
