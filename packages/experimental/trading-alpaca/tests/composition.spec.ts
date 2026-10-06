@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { type ModuleLoaderV2 } from '@deepseek-ai/cordis-plugin-loader'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import type { BrokerOrderId, BrokerOrderRequest, ClientOrderId, OrderStreamEvent, VenueStatus } from '@deepseek-ai/dsh-experimental-trading'
@@ -92,13 +92,19 @@ async function boot(options: BootOptions): Promise<Context> {
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
     ['@deepseek-ai/dsh-experimental-trading-alpaca', TradingAlpaca],
   ])
-  ctx.loader.internal = {
+  const internal: ModuleLoaderV2 = {
     version: 'v2',
-    async import(specifier: string) {
+    loadCache: new Map(),
+    import: (specifier: string) => {
       if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
-      return modules.get(specifier)
+      return Promise.resolve(modules.get(specifier))
     },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+    register(): never { throw new Error('unexpected module hook registration') },
+    getOrCreateModuleJob(): never { throw new Error('unexpected module job creation') },
+    resolveSync(): never { throw new Error('unexpected synchronous module resolution') },
+    load(): never { throw new Error('unexpected module load') },
+  }
+  ctx.loader.internal = internal
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   return ctx

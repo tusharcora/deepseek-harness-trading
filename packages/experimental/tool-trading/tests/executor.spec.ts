@@ -357,6 +357,7 @@ describe('executing a proposal', () => {
     desk = await bootDesk()
     const id = idOf(await desk.executor.proposeOrder(buy(), context()))
     approve('call-1')
+    // oxlint-disable-next-line typescript/unbound-method -- the spy's first call runs the saved method on the same journal
     const original = Journal.prototype.update
     // The first write marks the order in flight before it is sent; the second records the broker's answer.
     vi.spyOn(Journal.prototype, 'update').mockImplementationOnce(original).mockRejectedValueOnce(new Error('disk full'))

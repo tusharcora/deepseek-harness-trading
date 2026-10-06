@@ -5,7 +5,10 @@
  *
  * @module @deepseek-ai/dsh-experimental-tool-trading/journal
  */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { BrokerOrderId, ClientOrderId, ProposalId } from '@deepseek-ai/dsh-experimental-trading'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { type Domain, defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { type ZodType, z as zod } from 'zod'
 import type { JournalEntry, JournalStatus } from './types.ts'
@@ -14,28 +17,28 @@ const STATUSES = [
   'proposed', 'denied', 'rejected', 'submitted', 'partially_filled', 'filled', 'canceled', 'expired', 'failed', 'unknown',
 ] as const satisfies readonly JournalStatus[]
 
-// Branded ids are plain strings on disk; the cast restores the brands the executor wrote.
-const entrySchema = zod.object({
-  proposalId: zod.string(),
-  sessionId: zod.string(),
-  callId: zod.string().optional(),
+// Branded ids are plain strings on disk; the transforms restore the brands the executor wrote.
+const entrySchema: ZodType<JournalEntry> = zod.object({
+  proposalId: zod.string().transform(value => brandString<ProposalId>(value)),
+  sessionId: zod.string().transform(value => brandString<SessionId>(value)),
+  callId: zod.string().transform(value => brandString<ToolCallId>(value)).exactOptional(),
   source: zod.enum(['dsh-agent', 'claude-code-mcp']),
   kind: zod.enum(['order', 'cancel']),
   ticker: zod.string(),
   side: zod.enum(['buy', 'sell']),
-  qty: zod.number().optional(),
-  notional: zod.number().optional(),
+  qty: zod.number().exactOptional(),
+  notional: zod.number().exactOptional(),
   rationale: zod.string(),
-  clientOrderId: zod.string().optional(),
-  orderId: zod.string().optional(),
+  clientOrderId: zod.string().transform(value => brandString<ClientOrderId>(value)).exactOptional(),
+  orderId: zod.string().transform(value => brandString<BrokerOrderId>(value)).exactOptional(),
   status: zod.enum(STATUSES),
   filledQty: zod.number(),
-  filledAvgPrice: zod.number().optional(),
+  filledAvgPrice: zod.number().exactOptional(),
   day: zod.string(),
   createdAt: zod.number(),
   updatedAt: zod.number(),
-  note: zod.string().optional(),
-}).strict() as unknown as ZodType<JournalEntry>
+  note: zod.string().exactOptional(),
+}).strict()
 
 /** Storage domain holding the trading journal. */
 export const tradingJournalSpec = defineDomain({

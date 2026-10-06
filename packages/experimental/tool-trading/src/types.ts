@@ -195,8 +195,11 @@ export type ProposeResult =
   | { readonly kind: 'pending'; readonly proposalId: ProposalId; readonly summary: string }
   | { readonly kind: 'duplicate'; readonly proposalId: ProposalId; readonly summary: string }
 
-/** `get_quote` result. */
-export interface QuoteReport {
+/**
+ * `get_quote` result. Tool results are JSON values: the report types are type aliases with mutable arrays so each is
+ * assignable to `JsonValue`.
+ */
+export type QuoteReport = {
   readonly symbol: string
   readonly assetClass: AssetClass
   readonly bid: number
@@ -207,7 +210,7 @@ export interface QuoteReport {
 }
 
 /** `get_account` result. */
-export interface AccountReport {
+export type AccountReport = {
   readonly mode: TradingMode
   readonly status: VenueStatus
   readonly equity: number
@@ -219,7 +222,7 @@ export interface AccountReport {
 }
 
 /** One `get_positions` row. */
-export interface PositionReport {
+export type PositionReport = {
   readonly symbol: string
   readonly qty: number
   readonly qtyAvailable: number
@@ -230,7 +233,7 @@ export interface PositionReport {
 }
 
 /** One open broker order in `list_orders`. */
-export interface OrderRow {
+export type OrderRow = {
   readonly orderId: BrokerOrderId
   readonly symbol: string
   readonly side: Side
@@ -245,7 +248,7 @@ export interface OrderRow {
 }
 
 /** One desk order proposed today, in `list_orders`. */
-export interface JournalRow {
+export type JournalRow = {
   readonly proposalId: ProposalId
   readonly symbol: string
   readonly side: Side
@@ -259,13 +262,13 @@ export interface JournalRow {
 }
 
 /** `list_orders` result. */
-export interface OrdersReport {
-  readonly open: readonly OrderRow[]
-  readonly today: readonly JournalRow[]
+export type OrdersReport = {
+  readonly open: OrderRow[]
+  readonly today: JournalRow[]
 }
 
 /** `place_order` / `cancel_order` result. */
-export interface OrderReport {
+export type OrderReport = {
   readonly proposalId: ProposalId
   readonly orderId: BrokerOrderId
   readonly symbol: string
@@ -296,13 +299,13 @@ export interface BarsRequest {
 }
 
 /** One swing high or low. */
-export interface SwingPoint {
+export type SwingPoint = {
   readonly t: number
   readonly price: number
 }
 
 /** `get_bars` result. `bars` rows are `[t, open, high, low, close, volume]`, oldest first. */
-export interface BarsReport {
+export type BarsReport = {
   readonly symbol: string
   readonly timeframe: Timeframe
   readonly count: number
@@ -311,8 +314,8 @@ export interface BarsReport {
     readonly high: number
     readonly low: number
     readonly changePct: number
-    readonly swingHighs: readonly SwingPoint[]
-    readonly swingLows: readonly SwingPoint[]
+    readonly swingHighs: SwingPoint[]
+    readonly swingLows: SwingPoint[]
   } | null
   readonly indicators: {
     readonly sma20?: number | null
@@ -321,5 +324,5 @@ export interface BarsReport {
     readonly macd?: { readonly macd: number | null; readonly signal: number | null; readonly histogram: number | null }
     readonly bollinger?: { readonly upper: number | null; readonly middle: number | null; readonly lower: number | null }
   }
-  readonly bars: readonly (readonly number[])[]
+  readonly bars: number[][]
 }

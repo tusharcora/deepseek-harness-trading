@@ -1,6 +1,73 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-10-05-trading-desk.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-05-trading-desk.md
-2026-10-05-trading-desk.md: 679fa3b20da910dabb7fefcf6d55913d6f497b4c
-2026-10-05-trading-desk.zh.md: 37cbf23b897c81f8be542c8631e19bd297c7f11f
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts:
+  en: 97c51ed955fda0f9
+  zh: 83b3a63869140eb1
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/problem:
+  en: 5790e46bc07f7497
+  zh: 0bfaa9d5a0f80006
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal:
+  en: 6521d5ad4f8e3f75
+  zh: cc560798e92ddeea
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/package-topology:
+  en: 0e0687a3a256396c
+  zh: e867ae5402d25ad2
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/execution-boundary:
+  en: bf6d458b8f0549d8
+  zh: 5b6042d35d5a97ce
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/market-data:
+  en: 0f2132c45467a7d6
+  zh: 6cdc7b48e76331d1
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/order-flow:
+  en: 2d7fb210cd8eaf5e
+  zh: 524a8bba68c9bfa1
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/risk-limits:
+  en: c5d389044f3c2ae5
+  zh: 24edd1e514b952ca
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/trading-panel-and-tool-views:
+  en: 83d6a9c5eb1e777c
+  zh: 93cdaae057c4b90c
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/error-handling:
+  en: 1e0165fd1f26c112
+  zh: c1d25196d0cf5c7e
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/proposal/claude-code-as-a-trading-agent:
+  en: d2337cc1777db18e
+  zh: 0fab42fd1e7273ad
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered:
+  en: 6119e2aff3b6be5a
+  zh: 76136ef5249c23eb
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-make-trading-part-of-the-default-product:
+  en: c893f2831c52e01e
+  zh: 1d3a5c38da9db170
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-an-out-of-tree-plugin-repository:
+  en: 2a771f2f058fe466
+  zh: 1dc7183d1fc47b7d
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-the-tradingview-advanced-charts-library-or-widget:
+  en: 9904c75ef5dad0b6
+  zh: e39f5107b58fc859
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-route-model-requests-through-the-user-s-claude-pro-max-login:
+  en: df6748b64f149c44
+  zh: 5ab7ed722453b599
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-the-subagent-claude-code-backend-on-the-subscription:
+  en: 0716294edfef57b8
+  zh: 4a208f251f05875e
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-a-stdio-mcp-server:
+  en: 8cee1ba0efe3abe3
+  zh: 804028e6828d922d
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-a-multi-agent-desk-first:
+  en: 15745fe17fd947fc
+  zh: 2a1a1de82410eab3
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-autonomous-trading-within-limits:
+  en: 4784189f66209d91
+  zh: 30e001408a45583d
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/alternatives-considered/why-not-a-second-crypto-exchange-or-interactive-brokers-in-slice-1:
+  en: 93eb228a7c7b782a
+  zh: 28112fd990138eaa
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/acceptance-criteria:
+  en: 88ec6207e51fa7a2
+  zh: 288da8a5a1d0e1de
+/agent-note-trading-desk-agent-proposed-stock-and-crypto-orders-with-live-charts/risks:
+  en: 4cab50726f8f4e67
+  zh: 142e2cb7922a11bf

@@ -41,8 +41,11 @@ Before starting, put your Alpaca paper keys into `$DSH_HOME/.credentials.yaml` a
 |---|---|
 | `mcp-resources` | Disabled: no MCP resource tools on the host plane |
 | `cordis-host-runner`, `cordis-client-runner` | Disabled: no model-defined Host or Client plugins |
+| `cordis-inspect-providers` | Disabled: its providers register only into the disabled host runner's inspect registry |
 | `ui-cordis` | Disabled: the Cordis browser view runs on the disabled client runner |
-| `agent-presets` | `default: trader`, `includeShippedRoot: false`, `includeUserRoot: false`; the only root is this package's `presets` directory, with `trust: system` |
+| `preset-standard`, `preset-ptc`, `preset-minimal`, `preset-cordis` | Disabled: the shipped preset declarations |
+| `agent-preset-registry` | `default: trader` |
+| `preset-trader` | Inserted: the `trader` declaration of `@deepseek-ai/dsh-agent-preset`, with name `Trader` and order 1 |
 | `trading-alpaca` | Inserted: `@deepseek-ai/dsh-experimental-trading-alpaca` with `mode: paper` |
 | `trading-executor` | Inserted: `@deepseek-ai/dsh-experimental-tool-trading` with `maxOrderNotional: 1000`, `maxPositionPct: 0.2`, `dailyLossPct: 0.03`, `maxOrdersPerDay: 20`, `allowShort: false`, `allowMargin: false`, empty `allowlist` and `denylist`, `staleQuoteMs: 30000`, `driftTolerance: 0.01`, `barsDefault: 100`, `barsCap: 500` |
 
@@ -68,15 +71,13 @@ The model receives exactly nine tools: `get_quote`, `get_bars`, `get_account`, `
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml), declared as `dsh.bundle.patch`, and the preset under [`presets/trader`](presets/trader). The executor stays on the host plane so every order path shares one account lock, one set of reservations, and one journal; its tools mount only inside the preset.
+The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml), declared as `dsh.bundle.patch`; its `preset-trader` row declares the trader preset's child rows. The executor stays on the host plane so every order path shares one account lock, one set of reservations, and one journal; its tools mount only inside the preset.
 
 | File | Role |
 |---|---|
-| [`cordis.patch.yml`](cordis.patch.yml) | Ordered patch over `dsh-base` and `dsh-web-app` |
-| [`presets/trader/agent.cordis.yml`](presets/trader/agent.cordis.yml) | The trader preset's rows |
-| [`presets/trader/preset.yml`](presets/trader/preset.yml) | Preset name, description, and order |
-| [`src/index.ts`](src/index.ts) | Empty module entry; the patch and the preset are the runtime content |
-| — | No runtime invariant companion is published; the package carries only a static profile patch and a preset. The executor and venue packages own the relations they enforce. |
+| [`cordis.patch.yml`](cordis.patch.yml) | Ordered patch over `dsh-base` and `dsh-web-app`, including the trader preset declaration |
+| [`src/index.ts`](src/index.ts) | Empty module entry; the patch is the runtime content |
+| — | No runtime invariant companion is published; the package carries only a static profile patch. The executor and venue packages own the relations they enforce. |
 
 </details>
 
@@ -119,7 +120,7 @@ Stable for a given model; the `{{model}}` interpolation changes the prefix only 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Saved default preset** — settings are shared under `$DSH_HOME`, so a saved `agent-presets.default` from another profile makes new sessions fail with `agent-presets: preset "<id>" not found (available: trader)` until the user picks Trader as the default or turns off mode selection in Settings.
+- **Saved default preset** — settings are shared under `$DSH_HOME`, so a default preset saved from another profile makes new sessions fail with `Unknown agent preset: <id>` until the user picks Trader as the default in Settings.
 - **External shell-capable agents** — an agent outside this preset that has a shell, such as Claude Code in the Terminal tab, can still read the keys and trade directly; see the Agent Note's Execution boundary.
 - **Keys in a file** — the keys go in `$DSH_HOME/.credentials.yaml` until the Trading settings card arrives.
 - **File guidance without file tools** — the trader's system prompt still carries the Web app's file-output guidance and the `workspace-write` file policy line, although the trader has no file tools; Plan 4 drops them.
@@ -131,6 +132,6 @@ Stable for a given model; the `{{model}}` interpolation changes the prefix only 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The preset root is resolved with `createRequire(baseUrl)` from the profile directory, where `dsh plugin add` (and the Web test scaffold's install anchors) place the package. The `trading-desk` Web snapshot (`snapshots/web/trading-desk`) was recorded against a local Qwen model served under the DeepSeek model name; its `snapshot.yml` records this, and re-recording with the DeepSeek API replaces only the session log.
+The trader declaration's child rows resolve from this package's directory, like every row of the patch; the package depends on each plugin they name. The `trading-desk` Web snapshot (`snapshots/web/trading-desk`) was recorded against a local Qwen model served under the DeepSeek model name; its `snapshot.yml` records this, and re-recording with the DeepSeek API replaces only the session log.
 
 </details>

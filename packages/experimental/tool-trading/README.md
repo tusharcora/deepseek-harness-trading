@@ -149,7 +149,7 @@ Schemas are stable for a preset generation, so the request prefix is reusable; `
 
 #### What the model sees
 
-When an order of the agent's own proposals fills, the next request carries a user message from `@deepseek-ai/dsh-experimental-tool-trading`: `Order update: your <side> of <ticker> (order <orderId>) filled <fillQty> at <price>; <filledQty> filled in total, order <status>.` A fill without a reported price reads `at an unreported price`. An idle agent is not woken. Only `dsh-agent` proposals get notices; proposals from the planned Claude Code MCP endpoint will read fills through `list_orders`.
+When an order of the agent's own proposals fills, the next request carries a user message whose source kind is `trading-fill`: `Order update: your <side> of <ticker> (order <orderId>) filled <fillQty> at <price>; <filledQty> filled in total, order <status>.` A fill without a reported price reads `at an unreported price`. An idle agent is not woken. Only `dsh-agent` proposals get notices; proposals from the planned Claude Code MCP endpoint will read fills through `list_orders`.
 
 #### Token effect
 

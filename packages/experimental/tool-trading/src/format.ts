@@ -41,7 +41,12 @@ const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
  * @returns the value without undefined fields.
  */
 export function compact<T extends object>(value: { readonly [K in keyof T]-?: T[K] | undefined }): T {
-  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as unknown as T
+  const result: Partial<T> = {}
+  for (const key of Object.keys(value) as (keyof T)[]) {
+    const field = value[key]
+    if (field !== undefined) result[key] = field
+  }
+  return result as T
 }
 
 /**

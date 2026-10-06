@@ -1,4 +1,4 @@
-# session.v3.jsonl was recorded against a local Qwen3.6-35B served by Ollama under the model name
+# session.v4.jsonl was recorded against a local Qwen3.6-35B served by Ollama under the model name
 # deepseek-v4-flash (DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1). Re-recording with the real DeepSeek API
 # replaces it with no other change.
 version: 1

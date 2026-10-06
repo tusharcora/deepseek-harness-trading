@@ -54,7 +54,7 @@ describe('submitOrder', () => {
     expect(fake.requests[1]?.query.get('client_order_id')).toBe('c-1')
     fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
     await expect(submitOrder(http, request, timing())).rejects.toMatchObject({
-      code: 'unknown-outcome', message: expect.stringContaining('c-1') as unknown,
+      code: 'unknown-outcome', message: expect.stringContaining('c-1') as string,
     })
     expect(lookups()).toBe(3)
     expect(waits).toEqual([50])
@@ -81,7 +81,7 @@ describe('submitOrder', () => {
     fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 42210000, message: 'Client_Order_ID must be unique' } }))
     fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
     await expect(submitOrder(http, request, timing())).rejects.toMatchObject({
-      code: 'unknown-outcome', message: expect.stringContaining('c-1') as unknown,
+      code: 'unknown-outcome', message: expect.stringContaining('c-1') as string,
     })
     expect(lookups()).toBe(2)
     expect(waits).toEqual([50])

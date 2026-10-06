@@ -58,7 +58,7 @@ describe('fills from the order stream', () => {
     expect(desk.injected.map(message => message.content)).toEqual([[{ type: 'text',
       text: `Order update: your buy of BTC/USD (order ${order.orderId}) filled 0.0002 at $62,831.50; `
         + '0.0002 filled in total, order filled.' }]])
-    expect(desk.injected[0]?.source).toEqual({ kind: 'plugin', plugin: '@deepseek-ai/dsh-experimental-tool-trading' })
+    expect(desk.injected[0]?.source).toEqual({ kind: 'trading-fill' })
     await desk.executor.reconcile()
     expect(desk.events('trading/fill')).toHaveLength(1)
     expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_831.5 })

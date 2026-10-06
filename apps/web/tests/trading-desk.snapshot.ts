@@ -2,7 +2,7 @@
 // that the user approves through the generic approval waterfall, the real Alpaca provider submits it to a local fake
 // broker, the fill streams back, and the agent reads it on the next request.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-experimental-tool-trading'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -18,7 +18,7 @@ import { assertFixtureInventory, launchWebScaffold, recordFixture, webSnapshotMo
 import { type FakeBroker, startFakeBroker } from './trading-fake-broker.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/trading-desk', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v4.jsonl')
 const BUNDLE_DIR = fileURLToPath(new URL('../../../packages/experimental/bundle-trading', import.meta.url))
 const BUNDLE_PATCH = join(BUNDLE_DIR, 'cordis.patch.yml')
 const MODE = webSnapshotMode()
@@ -32,14 +32,13 @@ const ALLOWLIST = ['cancel_order', 'get_account', 'get_bars', 'get_positions', '
 
 interface Desk { readonly scaffold: WebScaffold; readonly broker: FakeBroker; readonly home: string }
 
-async function launchDesk(options: { readonly settings?: string; readonly replay: boolean }): Promise<Desk> {
+async function launchDesk(options: { readonly savedDefault?: string; readonly replay: boolean }): Promise<Desk> {
   const broker = await startFakeBroker()
   let home: string | undefined
   try {
     home = await mkdtemp(join(tmpdir(), 'dsh-trading-home-'))
     await writeFile(join(home, '.credentials.yaml'),
       'version: 1\nrefs:\n  ALPACA_API_KEY: fake-key\n  ALPACA_SECRET_KEY: fake-secret\n', { mode: 0o600 })
-    if (options.settings !== undefined) await writeFile(join(home, 'settings.yaml'), options.settings)
     const overlay = join(home, 'trading.overlay.yml')
     await writeFile(overlay, [
       readFileSync(BUNDLE_PATCH, 'utf8'),
@@ -51,6 +50,13 @@ async function launchDesk(options: { readonly settings?: string; readonly replay
       `    tradeStreamUrl: ${broker.streamUrl}`,
       '    streamBackoffMs: [50]',
       '    lookupConfirmMs: 0',
+      // A default the user saved in Settings is the registry row's volatile `selectedDefault`.
+      ...options.savedDefault === undefined ? [] : [
+        '- id: agent-preset-registry',
+        '  config:',
+        '    default: trader',
+        `    selectedDefault: ${options.savedDefault}`,
+      ],
       '',
     ].join('\n'))
     const scaffold = await launchWebScaffold({
@@ -113,8 +119,11 @@ describe('trading profile: trader agent trades on a fake broker', () => {
     await closeDesk(desk)
   })
 
-  it('applies the shipped profile layer and gives the trader agent exactly the allowlisted tools', () => {
-    expect(desk.scaffold.ctx.agentPresets.roots).toEqual([{ path: realpathSync(join(BUNDLE_DIR, 'presets')), trust: 'system' }])
+  it('applies the shipped profile layer and gives the trader agent exactly the allowlisted tools', async () => {
+    expect(desk.scaffold.ctx.agentPresets.defaultId).toBe('trader')
+    expect(await desk.scaffold.ctx.agentPresets.list()).toEqual([{
+      id: 'trader', name: 'Trader', description: 'Analyzes US stocks and crypto and proposes orders that you approve one at a time.', order: 1,
+    }])
     const header = handle.agent.session.requestHeader()
     expect(header?.tools?.map(tool => tool.name).toSorted()).toEqual(ALLOWLIST)
     expect(desk.scaffold.ctx.tools.schemas(handle.agent).map(tool => tool.name).toSorted()).toEqual(ALLOWLIST)
@@ -150,14 +159,14 @@ describe('trading profile: trader agent trades on a fake broker', () => {
   })
 
   it('keeps its snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl', 'system-prompt.expected.md', 'tool-schemas.expected.json'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v4.jsonl', 'system-prompt.expected.md', 'tool-schemas.expected.json'])
   })
 })
 
-describe('trading profile with a saved default from another profile', () => {
+describe('trading profile with a saved default naming a disabled preset', () => {
   it('fails new sessions loudly, naming the saved preset', async () => {
     const desk = await launchDesk({
-      replay: false, settings: 'agent-presets:\n  default: standard\n  modeSelectionEnabled: true\n',
+      replay: false, savedDefault: 'standard',
     })
     try {
       const { scaffold } = desk
@@ -167,7 +176,7 @@ describe('trading profile with a saved default from another profile', () => {
         meta: { cwd: scaffold.workspaceCwd },
         agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
         setup: agentCtx => scaffold.ctx.agentPresets.mount(agentCtx).then(() => undefined),
-      })).rejects.toThrow('agent-presets: preset "standard" not found (available: trader)')
+      })).rejects.toThrow('Unknown agent preset: standard')
     } finally {
       await closeDesk(desk)
     }

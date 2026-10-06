@@ -43,6 +43,17 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /**
+     * A fill notice the executor injects into the agent that proposed the order. Readers preserve this message without
+     * the producer; nothing reads the kind.
+     * @persistenceAttribution
+     */
+    'trading-fill': { kind: 'trading-fill' }
+  }
+}
+
 type FirstCheck =
   | { readonly kind: 'denied'; readonly reasons: readonly string[]; readonly journal: boolean }
   | { readonly kind: 'checked'; readonly proposal: TradingOrderProposal }
@@ -70,9 +81,6 @@ function denied(reasons: readonly string[]): ProposeResult {
 function journalStatus(status: OrderStatus): JournalStatus {
   return status === 'open' ? 'submitted' : status
 }
-
-/** Plugin name on the fill notices an agent receives. */
-const PLUGIN_NAME = '@deepseek-ai/dsh-experimental-tool-trading'
 
 /**
  * Journal status order: a later, lower-ranked view of an order (a stale submit result or snapshot) never moves it back.
@@ -598,7 +606,7 @@ export class TradingExecutor extends Service {
     try {
       this.ctx.agents.get(entry.sessionId)?.inject(createUserMessage({
         content: [{ type: 'text', text: fillText(fill) }],
-        source: { kind: 'plugin', plugin: PLUGIN_NAME },
+        source: { kind: 'trading-fill' },
       }))
     } catch (error) {
       this.warn(`could not tell the agent about a fill: ${(error as Error).message}`)

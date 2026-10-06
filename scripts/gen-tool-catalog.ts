@@ -606,7 +606,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'ctx.tradingExecutor'],
     writes: ['tool/call', 'trading/proposal', 'approval/asked', 'approval/decided', 'trading/order', 'trading/fill', 'tool/result'],
     async mount(ctx) {
-      ctx.provide('tradingExecutor', { barWindow: () => ({ defaultCount: 100, cap: 500 }) } as unknown as TradingExecutor)
+      ctx.provide('tradingExecutor', { barWindow: () => ({ defaultCount: 100, cap: 500 }) } as TradingExecutor)
       await ctx.plugin(TradingTools)
     },
     note:

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-bundle-trading",
-  "description": "Experimental trading profile bundle: the trading profile patch and the trader agent preset",
-  "version": "0.1.6-alpha.1",
+  "description": "Experimental trading profile bundle: the trading profile patch and its trader agent preset declaration",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -25,7 +25,6 @@
   "files": [
     "lib/index.js",
     "cordis.patch.yml",
-    "presets",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -35,17 +34,23 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-experimental-tool-trading": "workspace:^",
-    "@deepseek-ai/dsh-experimental-trading": "workspace:^",
-    "@deepseek-ai/dsh-experimental-trading-alpaca": "workspace:^",
-    "@deepseek-ai/dsh-experimental-trading-venue": "workspace:^"
+    "@deepseek-ai/dsh-agent-preset": "workspace:*",
+    "@deepseek-ai/dsh-command-compact": "workspace:*",
+    "@deepseek-ai/dsh-compaction-basic": "workspace:*",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:*",
+    "@deepseek-ai/dsh-experimental-tool-trading": "workspace:*",
+    "@deepseek-ai/dsh-experimental-trading": "workspace:*",
+    "@deepseek-ai/dsh-experimental-trading-alpaca": "workspace:*",
+    "@deepseek-ai/dsh-experimental-trading-venue": "workspace:*",
+    "@deepseek-ai/dsh-persona": "workspace:*",
+    "@deepseek-ai/dsh-tool-web": "workspace:*"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "js-yaml": "^4.2.0"
   }
 }

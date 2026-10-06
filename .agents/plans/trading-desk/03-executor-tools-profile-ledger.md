@@ -127,12 +127,12 @@ Task 12: minor (deferred): bundle-trading depends on trading + trading-venue dir
 Task 12: complete (commits <sha>..<sha>, review clean)
 Task 13: dispatched (BASE <sha>)
 Task 13: implementer BLOCKED — recording needs DEEPSEEK_API_KEY (none in env/.env); uncommitted work in tree: trading-fake-broker.ts (listen-order fix), trading-desk.snapshot.ts, snapshots/web/trading-desk, corpus registration, tsconfig.host/apps/web tsconfig, scaffold.ts agent-presets composition fix; model-free probe confirmed preset rows resolve, 9 tools, approval→order→fill→inbox splice, /trading status
-Task 13: Ruling (user decision): record the snapshot against local Ollama qwen3.6:35b aliased as deepseek-v4-flash (DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1, dummy key); fixture notes its provenance — cost if wrong: re-record with real DeepSeek later. Local side effect: ollama alias deepseek-v4-flash (remove with ollama rm deepseek-v4-flash)
+Task 13: Ruling (user decision): record the snapshot against local Ollama qwen3.6:35b aliased as deepseek-v4-flash (DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1, dummy key); fixture notes the recording model — cost if wrong: re-record with real DeepSeek later. Local side effect: ollama alias deepseek-v4-flash (remove with ollama rm deepseek-v4-flash)
 Task 13: implementer DONE_WITH_CONCERNS (<sha>): recorded vs local qwen (labelled deepseek); ANALYZE prompt made explicit (two tool calls with JSON args); record-mode setup timeout 900 s; scaffold.ts agent-presets composition fix
 Task 13: review — spec ✅, approved; scaffold agent-presets change verified to leave existing scenarios' pins unchanged
 Task 13: minor (deferred): trading-desk.snapshot teardown skips closeDesk if handle.dispose() rejects
 Task 13: minor (deferred): fake broker body parse has no rejection path (non-JSON → unhandled rejection)
-Task 13: minor (deferred): fixture usage token counts come from Ollama (provenance-documented)
+Task 13: minor (deferred): fixture usage token counts come from Ollama (documented in snapshot.yml)
 Task 13: minor (deferred → final review): trader prompt carries web-app file-output guidance and workspace-write file policy though the trader has no file tools (model-visible capability text)
 Task 13: complete (commits <sha>..<sha>, review clean)
 Task 14: dispatched (BASE <sha>)

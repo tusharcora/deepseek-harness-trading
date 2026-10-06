@@ -32,11 +32,6 @@ const PLACE_ORDER = 'Propose a stock or crypto order. The user approves or rejec
   + 'reports the order id and status; later fills arrive as messages.'
 const OUTPUT = { type: 'json' } as const
 
-/** Reports are plain JSON made of strings, booleans, and finite numbers; the registry snapshots and re-validates them. */
-function json(value: object): JsonValue {
-  return value as unknown as JsonValue
-}
-
 function text(value: string): ContentBlock[] {
   return [{ type: 'text', text: value }]
 }
@@ -45,7 +40,7 @@ async function executeCall(executor: TradingExecutor, exec: ToolRunContext): Pro
   const sessionId = exec.agent?.session.id
   const proposalId = sessionId === undefined ? undefined : executor.proposalForCall(sessionId, exec.callId)
   if (sessionId === undefined || proposalId === undefined) throw new Error(NO_CHECKED_PROPOSAL)
-  return json(await executor.execute(proposalId, sessionId))
+  return await executor.execute(proposalId, sessionId)
 }
 
 /**
@@ -59,9 +54,9 @@ export function apply(ctx: Context): void {
     name: 'get_quote',
     description: 'Get the latest bid and ask for a US stock or a crypto pair, how old the quote is, and whether its market is open.',
     parameters: { symbol: { type: 'string', required: true, description: SYMBOL } },
-    output: { schema: OUTPUT, render: (_args, value) => text(renderQuote(value as unknown as QuoteReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderQuote(value as QuoteReport)) },
     isConcurrencySafe: () => true,
-    execute: async args => json(await executor.quote(args.symbol)),
+    execute: args => executor.quote(args.symbol),
   }))
   ctx.tools.register(defineTool({
     name: 'get_bars',
@@ -75,40 +70,40 @@ export function apply(ctx: Context): void {
       limit: { type: 'integer', description: 'How many of the most recent bars to return.' },
       indicators: { type: 'array', items: { type: 'string', enum: [...INDICATORS] }, description: 'Indicators to summarize.' },
     },
-    output: { schema: OUTPUT, render: (_args, value) => text(renderBars(value as unknown as BarsReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderBars(value as BarsReport)) },
     isConcurrencySafe: () => true,
-    execute: async args => json(await executor.bars({
+    execute: args => executor.bars({
       symbol: args.symbol, timeframe: args.timeframe,
       ...args.limit === undefined ? {} : { limit: args.limit },
       ...args.indicators === undefined ? {} : { indicators: args.indicators },
-    })),
+    }),
   }))
   ctx.tools.register(defineTool({
     name: 'get_account',
     description: 'Get the trading account: paper or live, whether trading is ready or halted, equity, cash, buying power, and '
       + 'profit or loss since the previous close.',
     parameters: {},
-    output: { schema: OUTPUT, render: (_args, value) => text(renderAccount(value as unknown as AccountReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderAccount(value as AccountReport)) },
     isConcurrencySafe: () => true,
-    execute: async () => json(await executor.account()),
+    execute: () => executor.account(),
   }))
   ctx.tools.register(defineTool({
     name: 'get_positions',
     description: 'List open positions with quantity, quantity available to sell, average entry price, current price, market value, '
       + 'and unrealized profit or loss.',
     parameters: {},
-    output: { schema: OUTPUT, render: (_args, value) => text(renderPositions(value as unknown as PositionReport[])) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderPositions(value as PositionReport[])) },
     isConcurrencySafe: () => true,
-    execute: async () => json(await executor.positions()),
+    execute: () => executor.positions(),
   }))
   ctx.tools.register(defineTool({
     name: 'list_orders',
     description: "List the broker's open orders with their order ids, and the orders proposed through this desk today with their "
       + 'status and fills.',
     parameters: {},
-    output: { schema: OUTPUT, render: (_args, value) => text(renderOrders(value as unknown as OrdersReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderOrders(value as OrdersReport)) },
     isConcurrencySafe: () => true,
-    execute: async () => json(await executor.orders()),
+    execute: () => executor.orders(),
   }))
   ctx.tools.register(defineTool({
     name: 'place_order',
@@ -129,7 +124,7 @@ export function apply(ctx: Context): void {
       stop_loss: { type: 'number', description: 'Bracket stop-loss price; whole-share stock orders only, with take_profit.' },
       rationale: { type: 'string', required: true, description: RATIONALE },
     },
-    output: { schema: OUTPUT, render: (_args, value) => text(renderOrderReport(value as unknown as OrderReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderOrderReport(value as OrderReport)) },
     execute: (_args, exec) => executeCall(executor, exec),
   }))
   ctx.tools.register(defineTool({
@@ -139,7 +134,7 @@ export function apply(ctx: Context): void {
       order_id: { type: 'string', required: true, description: 'Order id from list_orders.' },
       rationale: { type: 'string', required: true, description: RATIONALE },
     },
-    output: { schema: OUTPUT, render: (_args, value) => text(renderOrderReport(value as unknown as OrderReport)) },
+    output: { schema: OUTPUT, render: (_args, value) => text(renderOrderReport(value as OrderReport)) },
     execute: (_args, exec) => executeCall(executor, exec),
   }))
 }

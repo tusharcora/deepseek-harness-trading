@@ -45,13 +45,15 @@ export interface RequestOptions {
 }
 
 function parseJson(text: string): unknown {
+  let value: unknown
   try {
-    return JSON.parse(text) as unknown
+    value = JSON.parse(text)
   } catch (parseError) {
     // Not JSON (an HTML error page from a proxy); each caller decides what that means.
     void parseError
     return undefined
   }
+  return value
 }
 
 function toVenueError(status: number, body: unknown): VenueError {

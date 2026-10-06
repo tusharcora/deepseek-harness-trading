@@ -7670,24 +7670,42 @@ importers:
 
   packages/experimental/bundle-trading:
     dependencies:
+      '@deepseek-ai/dsh-agent-preset':
+        specifier: workspace:*
+        version: link:../../preset/agent-preset
+      '@deepseek-ai/dsh-command-compact':
+        specifier: workspace:*
+        version: link:../../compaction/command-compact
+      '@deepseek-ai/dsh-compaction-basic':
+        specifier: workspace:*
+        version: link:../../compaction/compaction-basic
+      '@deepseek-ai/dsh-compaction-tool-result-pruner':
+        specifier: workspace:*
+        version: link:../../compaction/compaction-tool-result-pruner
       '@deepseek-ai/dsh-experimental-tool-trading':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../tool-trading
       '@deepseek-ai/dsh-experimental-trading':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading
       '@deepseek-ai/dsh-experimental-trading-alpaca':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading-alpaca
       '@deepseek-ai/dsh-experimental-trading-venue':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading-venue
+      '@deepseek-ai/dsh-persona':
+        specifier: workspace:*
+        version: link:../../preset/persona
+      '@deepseek-ai/dsh-tool-web':
+        specifier: workspace:*
+        version: link:../../web/tool-web
     devDependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/cordis
       '@deepseek-ai/cordis-plugin-include':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/include
       js-yaml:
         specifier: ^4.2.0
@@ -8377,13 +8395,13 @@ importers:
   packages/experimental/tool-trading:
     dependencies:
       '@deepseek-ai/dsh-brand':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/brand
       '@deepseek-ai/dsh-experimental-trading':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading
       '@deepseek-ai/dsh-util-values':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/values
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -8393,74 +8411,74 @@ importers:
         version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/cordis
       '@deepseek-ai/cordis-plugin-include':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/include
       '@deepseek-ai/cordis-plugin-loader':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/loader
       '@deepseek-ai/dsh-agent':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../core/agent
       '@deepseek-ai/dsh-agent-loop-testkit':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../test-support/agent-loop-testkit
       '@deepseek-ai/dsh-commands':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../interaction/commands
       '@deepseek-ai/dsh-experimental-trading-alpaca':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading-alpaca
       '@deepseek-ai/dsh-experimental-trading-venue':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading-venue
       '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/launch-environment
       '@deepseek-ai/dsh-llm':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../llm/llm
       '@deepseek-ai/dsh-session':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../core/session
       '@deepseek-ai/dsh-storage':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../storage/storage
       '@deepseek-ai/dsh-storage-domain':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../storage/storage-domain
       '@deepseek-ai/dsh-storage-json':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../storage/storage-json
       '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../core/tools
       '@deepseek-ai/dsh-user-approval':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../interaction/user-approval
 
   packages/experimental/trading:
     dependencies:
       '@deepseek-ai/dsh-brand':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/brand
     devDependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/cordis
 
   packages/experimental/trading-alpaca:
     dependencies:
       '@deepseek-ai/dsh-brand':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/brand
       '@deepseek-ai/dsh-experimental-trading':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -8470,22 +8488,22 @@ importers:
         version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-credentials':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../credentials/credentials
       '@deepseek-ai/dsh-experimental-trading-venue':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading-venue
       '@deepseek-ai/dsh-http-proxy':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../util/launch-environment
       '@deepseek-ai/dsh-storage-domain':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../storage/storage-domain
       '@types/ws':
         specifier: ^8.18.1
@@ -8497,11 +8515,11 @@ importers:
   packages/experimental/trading-venue:
     dependencies:
       '@deepseek-ai/dsh-experimental-trading':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../trading
     devDependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:^
+        specifier: workspace:~
         version: link:../../../vendor/cordis
 
   packages/experimental/voice-input-bundle:

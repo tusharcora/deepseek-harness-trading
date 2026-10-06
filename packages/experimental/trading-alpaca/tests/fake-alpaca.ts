@@ -25,6 +25,11 @@ export interface FakeReply {
 
 type Responder = (request: RecordedRequest) => FakeReply
 
+function parseBody(text: string): unknown {
+  const body: unknown = JSON.parse(text)
+  return body
+}
+
 /** A local Alpaca stand-in: exact method + raw path routes, latest registration wins, every request recorded. */
 export class FakeAlpaca {
   readonly requests: RecordedRequest[] = []
@@ -62,7 +67,7 @@ export class FakeAlpaca {
       method: incoming.method ?? 'GET',
       path: url.pathname,
       query: url.searchParams,
-      body: text === '' ? undefined : JSON.parse(text) as unknown,
+      body: text === '' ? undefined : parseBody(text),
       keyId: typeof keyHeader === 'string' ? keyHeader : undefined,
     }
     this.requests.push(request)
