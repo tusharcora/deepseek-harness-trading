@@ -149,6 +149,7 @@
     { "path": "./packages/experimental/trading" },
     { "path": "./packages/experimental/trading-alpaca" },
     { "path": "./packages/experimental/trading-venue" },
+    { "path": "./packages/experimental/tool-trading" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },
     { "path": "./packages/experimental/browser-use-chrome-devtools-mcp" },
     { "path": "./packages/experimental/browser-use-stagehand-native" },
