@@ -196,6 +196,8 @@ export async function cancelOrder(http: AlpacaHttp, id: BrokerOrderId): Promise<
 
 /**
  * Cancel the instrument's open orders (they hold the shares), wait for them to clear, then close the position.
+ * While Alpaca rejects the close for insufficient balance or qty (it has not yet released the coins held by the cancelled orders),
+ * the close is retried up to `timing.settleChecks` times, `timing.settleDelayMs` apart; then that rejection is thrown.
  * @param http - REST client.
  * @param symbol - instrument.
  * @param timing - settle waits.
@@ -215,7 +217,20 @@ export async function closePosition(http: AlpacaHttp, symbol: TradingSymbol, tim
     await timing.sleep(timing.settleDelayMs)
     resting = await openOrders(http, symbol)
   }
-  return mapOrder(await http.request<RawRecord>('trading', 'DELETE', `/v2/positions/${encodeURIComponent(pathSymbol(symbol))}`))
+  const path = `/v2/positions/${encodeURIComponent(pathSymbol(symbol))}`
+  for (let retry = 0; ; retry++) {
+    try {
+      return mapOrder(await http.request<RawRecord>('trading', 'DELETE', path))
+    } catch (error) {
+      if (retry >= timing.settleChecks || !isCoinsHeld(error)) throw error
+      await timing.sleep(timing.settleDelayMs)
+    }
+  }
+}
+
+/** Alpaca's rejection of a close while coins held by just-cancelled orders are not yet released. */
+function isCoinsHeld(error: unknown): boolean {
+  return error instanceof VenueError && error.code === 'rejected' && /insufficient (balance|qty)/i.test(error.message)
 }
 
 /**

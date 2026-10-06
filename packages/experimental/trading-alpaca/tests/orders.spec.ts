@@ -258,6 +258,41 @@ describe('cancel, close, flatten', () => {
     expect(waits).toEqual([])
   })
 
+  const insufficient = { status: 403, body: { code: 40310000, message: 'insufficient balance for BTC (requested: 0.0002, available: 0)' } }
+  const closes = (): number => fake.requests.filter(r => r.method === 'DELETE' && r.path === '/v2/positions/BTCUSD').length
+
+  it('retries the close while Alpaca releases coins held by the cancelled orders', async () => {
+    let polls = 0
+    let attempts = 0
+    fake.on('GET', '/v2/orders', () => ({ status: 200, body: ++polls === 1 ? [placed] : [] }))
+    fake.on('DELETE', '/v2/orders/o-1', () => ({ status: 204 }))
+    fake.on('DELETE', '/v2/positions/BTCUSD', () => (++attempts <= 2 ? insufficient
+      : { status: 200, body: { ...placed, side: 'sell', type: 'market' } }))
+    expect((await closePosition(http, { assetClass: 'crypto', ticker: 'BTC/USD' }, timing())).side).toBe('sell')
+    expect(closes()).toBe(3)
+    expect(waits).toEqual([7, 7, 7])
+  })
+
+  it('rethrows the insufficient balance after the settle checks run out', async () => {
+    fake.on('GET', '/v2/orders', () => ({ status: 200, body: [] }))
+    fake.on('DELETE', '/v2/positions/BTCUSD', () => insufficient)
+    const closing = closePosition(http, { assetClass: 'crypto', ticker: 'BTC/USD' }, timing())
+    await expect(closing).rejects.toMatchObject({ code: 'rejected' })
+    await expect(closing).rejects.toThrow(/insufficient balance for BTC/)
+    expect(closes()).toBe(4)
+    expect(waits).toEqual([7, 7, 7])
+  })
+
+  it('does not retry any other close failure', async () => {
+    fake.on('GET', '/v2/orders', () => ({ status: 200, body: [] }))
+    fake.on('DELETE', '/v2/positions/BTCUSD', () => ({ status: 422, body: { message: 'position does not exist' } }))
+    await expect(closePosition(http, { assetClass: 'crypto', ticker: 'BTC/USD' }, timing())).rejects.toMatchObject({ code: 'rejected' })
+    fake.on('DELETE', '/v2/positions/BTCUSD', () => ({ status: 404, body: { message: 'insufficient qty available' } }))
+    await expect(closePosition(http, { assetClass: 'crypto', ticker: 'BTC/USD' }, timing())).rejects.toMatchObject({ code: 'not-found' })
+    expect(closes()).toBe(2)
+    expect(waits).toEqual([])
+  })
+
   it('flattens by cancelling orders and closing positions, failing on any item error', async () => {
     fake.on('DELETE', '/v2/positions', () => ({ status: 207, body: [
       { symbol: 'AAPL', status: 200, body: { ...placed, symbol: 'AAPL', asset_class: 'us_equity' } },

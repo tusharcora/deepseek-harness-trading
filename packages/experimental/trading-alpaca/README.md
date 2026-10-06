@@ -105,7 +105,7 @@ Numbers are sent as plain decimal strings, never in exponent notation, and every
 
 `positions()` reports Alpaca's `qty_available` as `qtyAvailable`, signed like `qty`. Right after a crypto buy fills, Alpaca reports the position with `qty_available` of 0 for a moment and rejects a sell for more than it, so a partial sell or cover is sized from `qtyAvailable`.
 
-`closePosition(symbol)` cancels the symbol's resting orders, which hold the shares (a per-order cancel failure is tolerated), checks up to `closeSettleChecks` times, `closeSettleMs` apart, that they are gone, then closes the position at market. The resting orders are cancelled even when Alpaca then reports no position and `closePosition` throws `not-found`. `flatten()` cancels every order and closes every position in one request; when any position fails, it throws `rejected` naming every failed instrument with its HTTP status.
+`closePosition(symbol)` cancels the symbol's resting orders, which hold the shares (a per-order cancel failure is tolerated), checks up to `closeSettleChecks` times, `closeSettleMs` apart, that they are gone, then closes the position at market. While Alpaca rejects the close with insufficient balance or qty because it has not yet released the coins held by the cancelled orders, the close is retried up to `closeSettleChecks` times, `closeSettleMs` apart, before that rejection is thrown. The resting orders are cancelled even when Alpaca then reports no position and `closePosition` throws `not-found`. `flatten()` cancels every order and closes every position in one request; when any position fails, it throws `rejected` naming every failed instrument with its HTTP status.
 
 ### Order updates
 
