@@ -15,6 +15,7 @@ import {
 import { createUserMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-storage-domain'
+import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type z from '@deepseek-ai/schemastery'
@@ -22,13 +23,13 @@ import { barsReport, WARMUP_BARS } from './bars.ts'
 import { ProposalBook } from './book.ts'
 import { Config, riskLimitsOf, validateConfig } from './config.ts'
 import {
-  BLOCKED, cancelSummary, compact, failureOf, fillText, HALTED, isInsufficientBalance, KEYS_MISSING, NO_CHECKED_PROPOSAL,
-  PRICE_MOVED, proposalSummary, TRADING_BLOCKED,
+  APPROVAL_OFF, BLOCKED, cancelSummary, compact, failureOf, fillText, HALTED, isInsufficientBalance, KEYS_MISSING, NO_AGENT,
+  NO_CHECKED_PROPOSAL, PRICE_MOVED, proposalSummary, TRADING_BLOCKED,
 } from './format.ts'
 import { clientOrderIdFor, mintProposalId, tradingDay } from './ids.ts'
 import { Journal, type JournalPatch, tradingJournalSpec } from './journal.ts'
 import { AccountLock } from './lock.ts'
-import { type ProposedCancel, type ProposedOrder, symbolOf, tickViolations } from './order-args.ts'
+import { parseCancelOrder, parsePlaceOrder, type ProposedCancel, type ProposedOrder, symbolOf, tickViolations } from './order-args.ts'
 import { brokerRequest, drifted, heldBySells, planOrder, takeSnapshot } from './snapshot.ts'
 import type {
   AccountReport, BarsReport, BarsRequest, JournalEntry, JournalRow, JournalStatus, OrderReport, OrderRow, OrdersReport,
@@ -45,6 +46,9 @@ declare module '@deepseek-ai/cordis' {
 type FirstCheck =
   | { readonly kind: 'denied'; readonly reasons: readonly string[]; readonly journal: boolean }
   | { readonly kind: 'checked'; readonly proposal: TradingOrderProposal }
+
+/** Tools whose calls must pass the executor: they reach the broker. */
+const ORDER_TOOLS: ReadonlySet<string> = new Set(['place_order', 'cancel_order'])
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
 
@@ -122,6 +126,24 @@ export class TradingExecutor extends Service {
     this.settings = validateConfig(config)
     this.limits = riskLimitsOf(this.settings)
     ctx.on('session/event', (session, event) => { this.observe(session.id, event) })
+    // Steps 1–4 run here, before the body. A downstream deny or cancel stands; anything else is replaced by the
+    // executor's own check and an ask. A listener prepended ahead that answers without delegating leaves no checked
+    // proposal, so the body fails closed.
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      if (!ORDER_TOOLS.has(exec.name)) return next()
+      const downstream = await next()
+      if (downstream.kind === 'deny' || downstream.kind === 'cancel') return downstream
+      return this.gate(exec)
+    })
+    // Guards run after the ask resolves and have no allow, so a Halt during the approval still stops the call.
+    ctx.tools.guard(exec => ORDER_TOOLS.has(exec.name) && ctx.tradingVenue.status() === 'halted' ? HALTED : undefined)
+    // Whatever ended the call (a guard, a later denial, an interrupted turn), its reservation must not outlive it.
+    ctx.on('tools/result', (exec) => {
+      const sessionId = exec.agent?.session.id
+      if (!ORDER_TOOLS.has(exec.name) || sessionId === undefined) return
+      const settled = this.book.settleCall(sessionId, exec.callId)
+      if (settled !== undefined) this.journalLater(settled.proposal.proposalId, { status: 'rejected', note: 'not sent' })
+    })
   }
 
   /** Open the trading journal. */
@@ -321,6 +343,32 @@ export class TradingExecutor extends Service {
    */
   proposalForCall(sessionId: SessionId, callId: ToolCallId): ProposalId | undefined {
     return this.book.forCall(sessionId, callId)
+  }
+
+  /** The pre-execute decision for an order tool call: deny, or ask with the checked proposal's summary. */
+  private async gate(exec: ToolExecution): Promise<PreToolDecision> {
+    const agent = exec.agent
+    if (agent === undefined) return { kind: 'deny', reason: NO_AGENT }
+    const approval = this.ctx.get('approval')
+    const policy = approval === undefined ? 'never' : approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask'
+    if (policy === 'never') return { kind: 'deny', reason: APPROVAL_OFF }
+    const context: ProposalContext = { session: agent.session, source: 'dsh-agent', callId: exec.callId }
+    try {
+      const result = await this.proposeFromArgs(exec.name, exec.arguments, context)
+      if (result.kind === 'denied') return { kind: 'deny', reason: result.reasons.join('\n') }
+      return { kind: 'ask', reason: result.summary }
+    } catch (error) {
+      return { kind: 'deny', reason: failureOf(error).message }
+    }
+  }
+
+  private async proposeFromArgs(tool: string, args: unknown, context: ProposalContext): Promise<ProposeResult> {
+    if (tool === 'place_order') {
+      const parsed = parsePlaceOrder(args)
+      return parsed.ok ? this.proposeOrder(parsed.value, context) : denied(parsed.reasons)
+    }
+    const parsed = parseCancelOrder(args)
+    return parsed.ok ? this.proposeCancel(parsed.value, context) : denied(parsed.reasons)
   }
 
   /**

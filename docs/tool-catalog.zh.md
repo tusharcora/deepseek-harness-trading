@@ -44,6 +44,7 @@
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`、`list_agents`、`send_message` | `ctx.tools`、`ctx.subagents`、`ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`、`tool/result`、`child session events through ctx.subagents` | - | 这些是控制可继续后台 subagent 的全局命名工具：绑定提供方的 `tool-subagent` 实例注册不同的委派工具；本包注册一次 `send_message` 和 `interrupt_agent`，另由 `list_agents` 通过单独加载的 `/list-agents` 插件提供，其目录行使用 sessionProjections 和实时 Agent 注册表。 |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 9 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
+| `@deepseek-ai/dsh-experimental-tool-trading` | `cancel_order`、`get_account`、`get_bars`、`get_positions`、`get_quote`、`list_orders`、`place_order` | `ctx.tools`、`ctx.tradingExecutor` | `tool/call`、`trading/proposal`、`approval/asked`、`approval/decided`、`trading/order`、`trading/fill`、`tool/result` | - | 实验性交易台的 7 个交易工具；只有 trading profile 的 trader agent preset 会挂载它们。place_order 与 cancel_order 始终通过 ctx.tradingExecutor 上的执行器服务询问用户。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
@@ -2423,6 +2424,229 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。
 
+
+<a id="deepseek-aidsh-experimental-tool-trading"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-trading`
+
+### `cancel_order`
+
+提议撤销一笔未完成订单，订单 id 取自 list_orders。用户批准或拒绝该撤单。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "description": "Order id from list_orders."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "One to three sentences on why, shown to the user with the approval request."
+    }
+  },
+  "required": [
+    "order_id",
+    "rationale"
+  ]
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_account`
+
+获取交易账户：paper 或 live、交易处于 ready 还是 halted、净值、现金、购买力，以及相对上一收盘的盈亏。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_bars`
+
+获取一只美股或一个加密货币交易对的近期价格 K 线（由旧到新），并附摘要：最新价、窗口内最高价与最低价、涨跌、近期的波段高点与低点，以及每个所请求指标的最新值（sma：SMA 20，ema：EMA 20，rsi：RSI 14，macd：MACD 12/26/9，bollinger：Bollinger 20/2）。以 CSV 表格返回最近 `limit` 根 K 线（默认 100，最多 500）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Bar length.",
+      "enum": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1D",
+        "1W"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "How many of the most recent bars to return."
+    },
+    "indicators": {
+      "type": "array",
+      "description": "Indicators to summarize.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "sma",
+          "ema",
+          "rsi",
+          "macd",
+          "bollinger"
+        ]
+      }
+    }
+  },
+  "required": [
+    "symbol",
+    "timeframe"
+  ]
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_positions`
+
+列出持仓，包括数量、可卖数量、平均建仓价、当前价、市值与未实现盈亏。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_quote`
+
+获取一只美股或一个加密货币交易对的最新买价与卖价、报价的时效，以及其市场是否开盘。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    }
+  },
+  "required": [
+    "symbol"
+  ]
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `list_orders`
+
+列出券商的未完成订单及其订单 id，以及今天通过本交易台提议的订单及其状态与成交。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `place_order`
+
+提议一笔股票或加密货币订单。每笔订单在到达券商之前都由用户批准或拒绝；违反风险限额的订单会连同原因被拒绝，且限额无法在此处修改。qty 与 notional 必须且只能给出其一；notional 订单为市价单。加密货币订单使用 time_in_force gtc 或 ioc，类型为 market、limit 或 stop_limit。碎股与 notional 股票订单为当日有效订单。普通 stop 订单仅在减少已有持仓时接受；其他情况请使用 stop_limit。增加敞口的市价单会以接近报价的限价单发送，因此在快速行情中可能无法成交。take_profit 与 stop_loss 一起为整股股票订单附加 bracket。结果报告订单 id 与状态；后续成交以消息形式送达。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ]
+    },
+    "qty": {
+      "type": "number",
+      "description": "Quantity in shares or coins. Give exactly one of qty or notional."
+    },
+    "notional": {
+      "type": "number",
+      "description": "Dollar amount for a market order. Give exactly one of qty or notional."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "market",
+        "limit",
+        "stop",
+        "stop_limit"
+      ]
+    },
+    "limit_price": {
+      "type": "number",
+      "description": "Required for limit and stop_limit orders."
+    },
+    "stop_price": {
+      "type": "number",
+      "description": "Required for stop and stop_limit orders."
+    },
+    "time_in_force": {
+      "type": "string",
+      "description": "Stocks: day or gtc (fractional and notional orders are day only). Crypto: gtc or ioc.",
+      "enum": [
+        "day",
+        "gtc",
+        "ioc"
+      ]
+    },
+    "take_profit": {
+      "type": "number",
+      "description": "Bracket take-profit limit price; whole-share stock orders only, with stop_loss."
+    },
+    "stop_loss": {
+      "type": "number",
+      "description": "Bracket stop-loss price; whole-share stock orders only, with take_profit."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "One to three sentences on why, shown to the user with the approval request."
+    }
+  },
+  "required": [
+    "symbol",
+    "side",
+    "type",
+    "time_in_force",
+    "rationale"
+  ]
+}
+```
+
+来源：[`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+实验性交易台的 7 个交易工具；只有 trading profile 的 trader agent preset 会挂载它们。place_order 与 cancel_order 始终通过 ctx.tradingExecutor 上的执行器服务询问用户。
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

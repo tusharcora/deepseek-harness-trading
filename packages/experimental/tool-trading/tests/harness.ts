@@ -18,6 +18,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import ApprovalService, { type ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { vi } from 'vitest'
 import TradingExecutor, { type Config } from '../src/index.ts'
+import * as TradingTools from '../src/tools.ts'
 import FakeVenue from './fake-venue.ts'
 
 /** Timers long enough that tests drive reconciliation themselves; one-millisecond exit retries. */
@@ -35,6 +36,8 @@ export interface DeskOptions {
   readonly sessionId?: string
   /** Set venue state before the executor starts. */
   readonly prepare?: (venue: FakeVenue) => void
+  /** Mount the tools plugin; default true. */
+  readonly tools?: boolean
 }
 
 /** A booted desk. */
@@ -90,6 +93,7 @@ export async function bootDesk(options: DeskOptions = {}): Promise<Desk> {
   await vi.waitFor(() => { if (ctx.get('tradingExecutor') === undefined) throw new Error('the executor did not start') })
   const executor = ctx.get('tradingExecutor')
   if (executor === undefined) throw new Error('the executor did not start')
+  if (options.tools !== false) await ctx.plugin(TradingTools)
   let closed = false
   const desk: Desk = {
     ctx, venue, executor, session, agent, injected, answer: 'allowed-once',

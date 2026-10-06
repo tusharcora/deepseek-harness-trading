@@ -40,6 +40,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
+| `@deepseek-ai/dsh-experimental-tool-trading` | `cancel_order`, `get_account`, `get_bars`, `get_positions`, `get_quote`, `list_orders`, `place_order` | `ctx.tools`, `ctx.tradingExecutor` | `tool/call`, `trading/proposal`, `approval/asked`, `approval/decided`, `trading/order`, `trading/fill`, `tool/result` | - | The seven trading tools of the experimental trading desk; only the trader agent preset of the trading profile mounts them. place_order and cancel_order always ask the user through the executor service at ctx.tradingExecutor. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
@@ -2416,6 +2417,229 @@ Wait for the next teammate status, mailbox, or shared-task change after this cal
 Source: [`packages/experimental/tool-agent-team/src/index.ts`](../packages/experimental/tool-agent-team/src/index.ts)
 
 All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.
+
+<a id="deepseek-aidsh-experimental-tool-trading"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-trading`
+
+### `cancel_order`
+
+Propose cancelling one open order by its order id from list_orders. The user approves or rejects the cancellation.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "description": "Order id from list_orders."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "One to three sentences on why, shown to the user with the approval request."
+    }
+  },
+  "required": [
+    "order_id",
+    "rationale"
+  ]
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_account`
+
+Get the trading account: paper or live, whether trading is ready or halted, equity, cash, buying power, and profit or loss since the previous close.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_bars`
+
+Get recent price bars for a US stock or a crypto pair, oldest first, with a summary: last price, high and low of the window, change, recent swing highs and lows, and the latest value of each requested indicator (sma: SMA 20, ema: EMA 20, rsi: RSI 14, macd: MACD 12/26/9, bollinger: Bollinger 20/2). Returns the last `limit` bars (default 100, at most 500) as a CSV table.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Bar length.",
+      "enum": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1D",
+        "1W"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "How many of the most recent bars to return."
+    },
+    "indicators": {
+      "type": "array",
+      "description": "Indicators to summarize.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "sma",
+          "ema",
+          "rsi",
+          "macd",
+          "bollinger"
+        ]
+      }
+    }
+  },
+  "required": [
+    "symbol",
+    "timeframe"
+  ]
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_positions`
+
+List open positions with quantity, quantity available to sell, average entry price, current price, market value, and unrealized profit or loss.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `get_quote`
+
+Get the latest bid and ask for a US stock or a crypto pair, how old the quote is, and whether its market is open.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    }
+  },
+  "required": [
+    "symbol"
+  ]
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `list_orders`
+
+List the broker's open orders with their order ids, and the orders proposed through this desk today with their status and fills.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+### `place_order`
+
+Propose a stock or crypto order. The user approves or rejects every order before it reaches the broker; an order that breaks a risk limit is refused with the reasons, and the limits cannot be changed from here. Give exactly one of qty or notional; notional orders are market orders. Crypto orders use time_in_force gtc or ioc and type market, limit, or stop_limit. Fractional and notional stock orders are day orders. A plain stop order is accepted only to reduce a position you hold; use stop_limit otherwise. A market order that adds exposure is sent as a limit near the quoted price, so it may not fill in a fast market. take_profit with stop_loss adds a bracket to a whole-share stock order. The result reports the order id and status; later fills arrive as messages.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "A US stock ticker such as AAPL, or a crypto pair such as BTC/USD (BTCUSD also works)."
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ]
+    },
+    "qty": {
+      "type": "number",
+      "description": "Quantity in shares or coins. Give exactly one of qty or notional."
+    },
+    "notional": {
+      "type": "number",
+      "description": "Dollar amount for a market order. Give exactly one of qty or notional."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "market",
+        "limit",
+        "stop",
+        "stop_limit"
+      ]
+    },
+    "limit_price": {
+      "type": "number",
+      "description": "Required for limit and stop_limit orders."
+    },
+    "stop_price": {
+      "type": "number",
+      "description": "Required for stop and stop_limit orders."
+    },
+    "time_in_force": {
+      "type": "string",
+      "description": "Stocks: day or gtc (fractional and notional orders are day only). Crypto: gtc or ioc.",
+      "enum": [
+        "day",
+        "gtc",
+        "ioc"
+      ]
+    },
+    "take_profit": {
+      "type": "number",
+      "description": "Bracket take-profit limit price; whole-share stock orders only, with stop_loss."
+    },
+    "stop_loss": {
+      "type": "number",
+      "description": "Bracket stop-loss price; whole-share stock orders only, with take_profit."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "One to three sentences on why, shown to the user with the approval request."
+    }
+  },
+  "required": [
+    "symbol",
+    "side",
+    "type",
+    "time_in_force",
+    "rationale"
+  ]
+}
+```
+
+Source: [`packages/experimental/tool-trading/src/tools.ts`](../packages/experimental/tool-trading/src/tools.ts)
+
+The seven trading tools of the experimental trading desk; only the trader agent preset of the trading profile mounts them. place_order and cancel_order always ask the user through the executor service at ctx.tradingExecutor.
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

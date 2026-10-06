@@ -63,6 +63,8 @@ import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import type { TradingExecutor } from '@deepseek-ai/dsh-experimental-tool-trading'
+import * as TradingTools from '@deepseek-ai/dsh-experimental-tool-trading/tools'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
@@ -595,6 +597,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
       'All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-experimental-tool-trading',
+    dir: 'tool-trading',
+    source: 'packages/experimental/tool-trading/src/tools.ts',
+    requires: ['ctx.tools', 'ctx.tradingExecutor'],
+    writes: ['tool/call', 'trading/proposal', 'approval/asked', 'approval/decided', 'trading/order', 'trading/fill', 'tool/result'],
+    async mount(ctx) {
+      ctx.provide('tradingExecutor', { barWindow: () => ({ defaultCount: 100, cap: 500 }) } as unknown as TradingExecutor)
+      await ctx.plugin(TradingTools)
+    },
+    note:
+      'The seven trading tools of the experimental trading desk; only the trader agent preset of the trading profile mounts them. '
+      + 'place_order and cancel_order always ask the user through the executor service at ctx.tradingExecutor.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-todo',
