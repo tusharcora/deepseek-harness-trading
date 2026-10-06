@@ -12,6 +12,100 @@ The experimental trading desk reaches a broker only through the trading venue se
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxtradingexecutor--tradingexecutor"></a>
+
+### `ctx.tradingExecutor` — `TradingExecutor`
+
+The order executor service.
+
+```ts cordis-catalog
+/**
+ * The venue's status, read synchronously; the tools refuse orders unless it is `ready`.
+ * @returns the venue's derived status.
+ */
+status(): VenueStatus
+
+/**
+ * The configured `get_bars` window, for the tool schema.
+ * @returns how many bars `get_bars` shows by default and at most.
+ */
+barWindow(): { readonly defaultCount: number; readonly cap: number }
+
+/**
+ * Read the latest quote and the market session for one instrument.
+ * @param symbolText - instrument name as typed.
+ * @returns the latest quote, its age, and whether the market is open.
+ */
+async quote(symbolText: string): Promise<QuoteReport>
+
+/**
+ * Read recent bars with warm-up for the indicators. A request without a limit gets `barsDefault` bars; a larger
+ * limit is cut to `barsCap`.
+ * @param request - symbol, timeframe, optional count and indicators.
+ * @returns the bars report over at most `barsCap` bars.
+ * @throws Error when the timeframe is unknown or the limit is not a whole number of at least 1.
+ */
+async bars(request: BarsRequest): Promise<BarsReport>
+
+/**
+ * Read the account, its mode, and the venue status.
+ * @returns the account with day profit or loss against the previous close.
+ */
+async account(): Promise<AccountReport>
+
+/**
+ * Read the broker's open positions.
+ * @returns open positions.
+ */
+async positions(): Promise<PositionReport[]>
+
+/**
+ * Read the broker's open orders and today's journal entries for order proposals.
+ * @returns the broker's open orders and today's desk orders.
+ */
+async orders(): Promise<OrdersReport>
+
+/**
+ * Steps 1–4 for an order: validate, then under the account lock snapshot, check, and reserve; journal the proposal and
+ * append `trading/proposal`. A risk denial is journaled; an identical pending MCP proposal is returned instead.
+ * @param input - the order and its rationale.
+ * @param context - proposing session, source, and call id.
+ * @returns the denial, or the pending proposal and its approval summary.
+ */
+async proposeOrder(input: ProposedOrder, context: ProposalContext): Promise<ProposeResult>
+
+/**
+ * Steps 1–4 for a cancellation: the order must be open at the broker.
+ * @param input - broker order id and rationale.
+ * @param context - proposing session, source, and call id.
+ * @returns the denial, or the pending proposal and its approval summary.
+ */
+async proposeCancel(input: ProposedCancel, context: ProposalContext): Promise<ProposeResult>
+
+/**
+ * Look up the proposal created for an in-app tool call.
+ * @param sessionId - session of the tool call.
+ * @param callId - in-app tool call id.
+ * @returns the unsettled proposal the pre-execute listener created for that call.
+ */
+proposalForCall(sessionId: SessionId, callId: ToolCallId): ProposalId | undefined
+
+/**
+ * Steps 5–8. Fails closed: only a proposal whose own `trading/proposal` event committed and whose call received an
+ * `allowed-once` decision is sent; under the account lock it is re-snapshotted, re-checked, planned with the
+ * post-approval reduce-only answer, and submitted with its client order id. The proposal settles whatever happens.
+ * @param proposalId - the proposal.
+ * @param sessionId - the session that proposed it.
+ * @returns the submitted order or accepted cancellation.
+ * @throws Error with a model-facing reason.
+ */
+async execute(proposalId: ProposalId, sessionId: SessionId): Promise<OrderReport>
+```
+
+Types: [SessionId](core.md) · [ToolCallId](core.md)
+
+Source: [`packages/experimental/tool-trading/src/executor.ts`](../../packages/experimental/tool-trading/src/executor.ts)
+
 <a id="ctxtradingvenue--tradingvenuegateway-abstract-seam"></a>
 
 ### `ctx.tradingVenue` — `TradingVenueGateway` (abstract seam)

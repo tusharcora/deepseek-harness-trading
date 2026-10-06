@@ -1,5 +1,5 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { OrderRequest, ProposalId } from '@deepseek-ai/dsh-experimental-trading'
+import type { BrokerOrderId, ClientOrderId, OrderRequest, ProposalId } from '@deepseek-ai/dsh-experimental-trading'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -25,7 +25,8 @@ function proposal(id: string, callId?: string, o: OrderRequest = order()): Tradi
 const cancel = (id: string): TradingCancelProposal => ({
   kind: 'cancel', proposalId: pid(id), source: 'dsh-agent', mode: 'paper', rationale: 'r',
   order: {
-    id: brandString('o-1'), clientOrderId: brandString('c-1'), symbol: btc, side: 'buy', type: 'limit', timeInForce: 'gtc',
+    id: brandString<BrokerOrderId>('o-1'), clientOrderId: brandString<ClientOrderId>('c-1'),
+    symbol: btc, side: 'buy', type: 'limit', timeInForce: 'gtc',
     qty: 0.1, limitPrice: 60_000, filledQty: 0, status: 'open',
   },
 })

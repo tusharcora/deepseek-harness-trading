@@ -130,6 +130,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   workspaceFiles: 'workspace.md',
   terminalController: 'workspace.md',
   directoryPickerController: 'workspace.md',
+  tradingExecutor: 'trading.md',
   tradingVenue: 'trading.md',
 }
 
@@ -341,6 +342,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionForkRequest: 'session.md',
   SessionForkValue: 'session.md',
   SessionId: 'core.md',
+  ToolCallId: 'core.md',
   SessionLogOffset: 'session.md',
   SessionSeq: 'session.md',
   SessionSeqCursor: 'session.md',
@@ -817,6 +819,18 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TradingMode: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   TradingSymbol: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   VenueStatus: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  ProposalId: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  AccountReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  BarsReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  BarsRequest: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  OrderReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  OrdersReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  PositionReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  ProposalContext: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  ProposeResult: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  QuoteReport: 'trading executor type is owned by packages/experimental/tool-trading/src/types.ts',
+  ProposedCancel: 'trading executor type is owned by packages/experimental/tool-trading/src/order-args.ts',
+  ProposedOrder: 'trading executor type is owned by packages/experimental/tool-trading/src/order-args.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */
