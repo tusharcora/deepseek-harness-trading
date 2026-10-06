@@ -10,7 +10,7 @@ import { type Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import {
   type BrokerOrder, type BrokerOrderRequest, checkRisk, type ClientOrderId, isTimeframe, type OrderRequest, type OrderStatus,
-  type OrderUpdate, type ProposalId, type RiskLimits, TIMEFRAMES, validateOrder, type VenueStatus,
+  type OrderStreamEvent, type OrderUpdate, type ProposalId, type RiskLimits, TIMEFRAMES, validateOrder, type VenueStatus,
 } from '@deepseek-ai/dsh-experimental-trading'
 import { createUserMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
@@ -27,7 +27,7 @@ import {
   NO_CHECKED_PROPOSAL, PRICE_MOVED, proposalSummary, TRADING_BLOCKED,
 } from './format.ts'
 import { clientOrderIdFor, mintProposalId, tradingDay } from './ids.ts'
-import { Journal, type JournalPatch, tradingJournalSpec } from './journal.ts'
+import { type InFlightEntry, Journal, type JournalPatch, tradingJournalSpec } from './journal.ts'
 import { AccountLock } from './lock.ts'
 import { parseCancelOrder, parsePlaceOrder, type ProposedCancel, type ProposedOrder, symbolOf, tickViolations } from './order-args.ts'
 import { brokerRequest, drifted, heldBySells, planOrder, takeSnapshot } from './snapshot.ts'
@@ -84,6 +84,14 @@ const RANK: Readonly<Record<JournalStatus, number>> = {
 
 /** Broker final statuses: once journaled, a later view never replaces them; only the filled quantity may still grow. */
 const BROKER_FINAL: ReadonlySet<JournalStatus> = new Set(['filled', 'canceled', 'expired', 'rejected'])
+
+const NOT_PLACED = 'the broker has no order with this id, so it was not placed'
+
+/** Below this difference an update's own fill quantity is the quantity the fold adds. */
+const QTY_EPSILON = 1e-9
+
+/** A broker number the journal may store: a non-finite value serializes as `null` and the journal would refuse to reopen. */
+const finite = (value: number | undefined): value is number => value !== undefined && Number.isFinite(value)
 
 function orderEntry(
   proposalId: ProposalId, order: OrderRequest, rationale: string, context: ProposalContext, now: number, status: JournalStatus,
@@ -146,11 +154,22 @@ export class TradingExecutor extends Service {
     })
   }
 
-  /** Open the trading journal. */
+  /** Open the trading journal, follow the venue's order stream, and reconcile at startup and every `reconcileMs`. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(tradingJournalSpec)
     this.ctx.effect(() => async () => { await domain.close() }, 'tool-trading journal close')
     this.journalReady.resolve(new Journal(domain))
+    this.ctx.effect(() => {
+      const off = this.ctx.tradingVenue.subscribeOrderUpdates((event) => { this.onOrderEvent(event) })
+      const timer = setInterval(() => { this.reconcileLater() }, this.settings.reconcileMs)
+      timer.unref()
+      return () => {
+        off()
+        clearInterval(timer)
+      }
+    }, 'tool-trading order updates')
+    // A new subscriber gets no gap for what happened before it subscribed; read the broker state now.
+    this.reconcileLater()
   }
 
   /**
@@ -393,6 +412,55 @@ export class TradingExecutor extends Service {
     }
   }
 
+  /**
+   * Re-read the broker's open orders and look up every journaled order still in flight, recording fills the stream did
+   * not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs
+   * without closing reports no gap. An order the broker has no record of, and never reported, is marked not placed;
+   * nothing is resubmitted.
+   * @returns when every in-flight order was checked.
+   */
+  async reconcile(): Promise<void> {
+    const journal = await this.journalReady.promise
+    const inFlight = journal.inFlight()
+    if (inFlight.length === 0) return
+    const venue = this.ctx.tradingVenue
+    const open = new Map<ClientOrderId, BrokerOrder>((await venue.openOrders()).map(order => [order.clientOrderId, order]))
+    for (const entry of inFlight) {
+      const order = open.get(entry.clientOrderId) ?? await venue.order(entry.clientOrderId)
+      await this.updates.run(() => order === undefined ? this.markNotPlaced(journal, entry) : this.foldOrder(order))
+    }
+  }
+
+  private onOrderEvent(event: OrderStreamEvent): void {
+    switch (event.kind) {
+      case 'gap':
+        this.reconcileLater()
+        break
+      case 'update': {
+        const { update } = event
+        this.updates.run(() => this.foldOrder(update.order, update)).catch((error: unknown) => {
+          this.warn(`could not record an order update: ${(error as Error).message}`)
+        })
+        break
+      }
+      /* v8 ignore next -- closed-union exhaustiveness guard */
+      default: assertNever(event, 'OrderStreamEvent')
+    }
+  }
+
+  private reconcileLater(): void {
+    this.reconcile().catch((error: unknown) => { this.warn(`order reconciliation failed: ${(error as Error).message}`) })
+  }
+
+  /**
+   * Mark an in-flight order the broker has no record of as not placed. An order the broker reported before (the entry
+   * has a broker order id) is left as it is.
+   */
+  private async markNotPlaced(journal: Journal, entry: InFlightEntry): Promise<void> {
+    if (journal.get(entry.proposalId)?.orderId !== undefined) return
+    await journal.update(entry.proposalId, { status: 'failed', note: NOT_PLACED }, Date.now())
+  }
+
   private async submitOrder(proposal: TradingOrderProposal, sessionId: SessionId): Promise<OrderReport> {
     const venue = this.ctx.tradingVenue
     const journal = await this.journalReady.promise
@@ -474,11 +542,12 @@ export class TradingExecutor extends Service {
     if (entry === undefined) return
     const observed = journalStatus(order.status)
     const status = BROKER_FINAL.has(entry.status) || RANK[observed] < RANK[entry.status] ? entry.status : observed
-    const filledQty = Math.max(order.filledQty, entry.filledQty)
+    const filledQty = finite(order.filledQty) ? Math.max(order.filledQty, entry.filledQty) : entry.filledQty
     const delta = filledQty - entry.filledQty
     if (delta <= 0 && status === entry.status && order.id === entry.orderId) return
     const next = await journal.update(entry.proposalId, compact<JournalPatch>({
-      status, orderId: order.id, filledQty, filledAvgPrice: order.filledAvgPrice ?? entry.filledAvgPrice, note: undefined,
+      status, orderId: order.id, filledQty, filledAvgPrice: finite(order.filledAvgPrice) ? order.filledAvgPrice : entry.filledAvgPrice,
+      note: undefined,
     }), Date.now())
     if (delta > 0) await this.reportFill(next, order, delta, update)
   }
@@ -495,12 +564,16 @@ export class TradingExecutor extends Service {
   /**
    * Record a fill as `trading/fill` in the proposing session (when it is live) and queue a notice for that session's
    * agent's next request; an idle agent is not woken. Claude Code proposals get no notice: Claude Code reads fills
-   * through tool results and `list_orders`.
+   * through tool results and `list_orders`. The update's own fill quantity and price are reported when they account for
+   * the whole new quantity; otherwise (a missed update, a view without a fill, an unpriced fill) the new quantity is
+   * reported at the order's average price.
    */
   private async reportFill(entry: JournalEntry, order: BrokerOrder, delta: number, update?: OrderUpdate): Promise<void> {
+    const own = update !== undefined && finite(update.fillQty) && finite(update.fillPrice)
+      && Math.abs(update.fillQty - delta) < QTY_EPSILON
     const fill = compact<TradingFillEvent>({
       proposalId: entry.proposalId, orderId: order.id, ticker: order.symbol.ticker, side: order.side,
-      fillQty: update?.fillQty ?? delta, fillPrice: update?.fillPrice ?? order.filledAvgPrice, filledQty: entry.filledQty,
+      fillQty: own ? update.fillQty : delta, fillPrice: own ? update.fillPrice : entry.filledAvgPrice, filledQty: entry.filledQty,
       filledAvgPrice: entry.filledAvgPrice, status: order.status, t: update?.t ?? Date.now(),
     })
     const session = this.ctx.sessions.get(entry.sessionId)

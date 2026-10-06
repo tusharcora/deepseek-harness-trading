@@ -242,10 +242,9 @@ describe('executing a proposal', () => {
     expect(await today()).toMatchObject([{ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_833 }])
   })
 
-  // Task 9's order stream and reconciliation are the public paths that fold a second view; until then the fold is
-  // reached directly.
-  const fold = (order: BrokerOrder): Promise<void> =>
-    (desk.executor as unknown as { foldOrder(order: BrokerOrder): Promise<void> }).foldOrder(order)
+  const streamed = (order: BrokerOrder): void => {
+    desk.venue.emit({ kind: 'update', update: { event: 'other', order, t: 1 } })
+  }
 
   it('keeps a broker final status when a later view of the same order disagrees', async () => {
     desk = await bootDesk()
@@ -258,8 +257,9 @@ describe('executing a proposal', () => {
     approve('call-1')
     await desk.executor.execute(id, desk.session.id)
     if (placed === undefined) throw new Error('the order was not placed')
-    await fold({ ...placed, status: 'canceled' })
-    await fold({ ...placed, status: 'open', filledQty: 0 })
+    streamed({ ...placed, status: 'canceled' })
+    streamed({ ...placed, status: 'open', filledQty: 0 })
+    await new Promise(resolve => setTimeout(resolve, 50))
     expect(await today()).toMatchObject([{ status: 'filled', filledQty: 0.0002 }])
     expect(desk.events('trading/fill')).toHaveLength(1)
     expect(desk.injected).toHaveLength(1)
@@ -273,9 +273,11 @@ describe('executing a proposal', () => {
     await expect(desk.executor.execute(id, desk.session.id)).rejects.toThrow('insufficient buying power')
     expect(await today()).toMatchObject([{ status: 'failed' }])
     const clientOrderId = clientId(createHash('sha256').update(`${desk.session.id}:${id}`).digest('hex'))
-    await fold(acceptedOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: 63_463.35, timeInForce: 'ioc',
+    streamed(acceptedOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: 63_463.35, timeInForce: 'ioc',
       clientOrderId }))
-    expect(await today()).toMatchObject([{ status: 'submitted', orderId: `order-${clientOrderId.slice(0, 8)}` }])
+    await vi.waitFor(async () => {
+      expect(await today()).toMatchObject([{ status: 'submitted', orderId: `order-${clientOrderId.slice(0, 8)}` }])
+    })
   })
 
   it('retries a crypto exit rejected for insufficient balance with the same client order id, and only an exit', async () => {
