@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { BrokerOrderId, ClientOrderId, OrderRequest, ProposalId } from '@deepseek-ai/dsh-experimental-trading'
+import type { BrokerOrder, BrokerOrderId, ClientOrderId, OrderRequest, ProposalId } from '@deepseek-ai/dsh-experimental-trading'
 import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -240,6 +240,42 @@ describe('executing a proposal', () => {
       .toMatchObject([{ proposalId: id, fillQty: 0.0002, fillPrice: 62_833, filledQty: 0.0002, status: 'filled' }])
     expect(desk.injected).toHaveLength(1)
     expect(await today()).toMatchObject([{ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_833 }])
+  })
+
+  // Task 9's order stream and reconciliation are the public paths that fold a second view; until then the fold is
+  // reached directly.
+  const fold = (order: BrokerOrder): Promise<void> =>
+    (desk.executor as unknown as { foldOrder(order: BrokerOrder): Promise<void> }).foldOrder(order)
+
+  it('keeps a broker final status when a later view of the same order disagrees', async () => {
+    desk = await bootDesk()
+    let placed: BrokerOrder | undefined
+    desk.venue.respond = (request) => {
+      placed = acceptedOrder(request, { filledQty: 0.0002, filledAvgPrice: 62_833, status: 'filled' })
+      return placed
+    }
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1')
+    await desk.executor.execute(id, desk.session.id)
+    if (placed === undefined) throw new Error('the order was not placed')
+    await fold({ ...placed, status: 'canceled' })
+    await fold({ ...placed, status: 'open', filledQty: 0 })
+    expect(await today()).toMatchObject([{ status: 'filled', filledQty: 0.0002 }])
+    expect(desk.events('trading/fill')).toHaveLength(1)
+    expect(desk.injected).toHaveLength(1)
+  })
+
+  it('lets a broker view of the order correct a submission recorded as failed', async () => {
+    desk = await bootDesk()
+    desk.venue.respond = () => { throw new VenueError('insufficient buying power', 'rejected', 40310000) }
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1')
+    await expect(desk.executor.execute(id, desk.session.id)).rejects.toThrow('insufficient buying power')
+    expect(await today()).toMatchObject([{ status: 'failed' }])
+    const clientOrderId = clientId(createHash('sha256').update(`${desk.session.id}:${id}`).digest('hex'))
+    await fold(acceptedOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: 63_463.35, timeInForce: 'ioc',
+      clientOrderId }))
+    expect(await today()).toMatchObject([{ status: 'submitted', orderId: `order-${clientOrderId.slice(0, 8)}` }])
   })
 
   it('retries a crypto exit rejected for insufficient balance with the same client order id, and only an exit', async () => {

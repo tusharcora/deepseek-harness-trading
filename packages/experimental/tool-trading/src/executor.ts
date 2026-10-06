@@ -70,10 +70,16 @@ function journalStatus(status: OrderStatus): JournalStatus {
 /** Plugin name on the fill notices an agent receives. */
 const PLUGIN_NAME = '@deepseek-ai/dsh-experimental-tool-trading'
 
-/** Journal status order: a later, lower-ranked view of an order (a stale submit result or snapshot) never moves it back. */
+/**
+ * Journal status order: a later, lower-ranked view of an order (a stale submit result or snapshot) never moves it back.
+ * `failed` ranks lowest so a broker view of an order the desk recorded as failed corrects the record.
+ */
 const RANK: Readonly<Record<JournalStatus, number>> = {
-  proposed: 0, submitted: 1, unknown: 1, partially_filled: 2, filled: 3, canceled: 3, expired: 3, rejected: 3, denied: 3, failed: 3,
+  failed: 0, proposed: 0, submitted: 1, unknown: 1, partially_filled: 2, filled: 3, canceled: 3, expired: 3, rejected: 3, denied: 3,
 }
+
+/** Broker final statuses: once journaled, a later view never replaces them; only the filled quantity may still grow. */
+const BROKER_FINAL: ReadonlySet<JournalStatus> = new Set(['filled', 'canceled', 'expired', 'rejected'])
 
 function orderEntry(
   proposalId: ProposalId, order: OrderRequest, rationale: string, context: ProposalContext, now: number, status: JournalStatus,
@@ -410,15 +416,16 @@ export class TradingExecutor extends Service {
 
   /**
    * Fold one broker view of a desk order into the journal. The submit result, every stream update, and every
-   * reconciliation lookup go through here, serialized on `updates`: status only moves forward, the filled quantity only
-   * grows, and only its growth is reported, so each filled quantity produces exactly one `trading/fill` and one notice.
+   * reconciliation lookup go through here, serialized on `updates`: status only moves forward, a broker final status
+   * (`filled`, `canceled`, `expired`, `rejected`) is never replaced, the filled quantity only grows, and only its growth
+   * is reported, so each filled quantity produces exactly one `trading/fill` and one notice.
    */
   private async foldOrder(order: BrokerOrder, update?: OrderUpdate): Promise<void> {
     const journal = await this.journalReady.promise
     const entry = journal.byClientOrderId(order.clientOrderId)
     if (entry === undefined) return
     const observed = journalStatus(order.status)
-    const status = RANK[observed] >= RANK[entry.status] ? observed : entry.status
+    const status = BROKER_FINAL.has(entry.status) || RANK[observed] < RANK[entry.status] ? entry.status : observed
     const filledQty = Math.max(order.filledQty, entry.filledQty)
     const delta = filledQty - entry.filledQty
     if (delta <= 0 && status === entry.status && order.id === entry.orderId) return
