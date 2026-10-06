@@ -22,6 +22,10 @@
       "types": "./lib/types/tools.d.ts",
       "default": "./lib/types/tools.js"
     },
+    "./command": {
+      "types": "./lib/types/command.d.ts",
+      "default": "./lib/types/command.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -41,6 +45,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-experimental-trading-venue": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -54,6 +59,7 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
+    "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-experimental-trading-alpaca": "workspace:^",
     "@deepseek-ai/dsh-experimental-trading-venue": "workspace:^",
     "@deepseek-ai/dsh-launch-environment": "workspace:^",

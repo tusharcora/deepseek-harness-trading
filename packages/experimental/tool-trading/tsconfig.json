@@ -17,6 +17,7 @@
     { "path": "../../core/tools" },
     { "path": "../../llm/llm" },
     { "path": "../../storage/storage-domain" },
-    { "path": "../../interaction/user-approval" }
+    { "path": "../../interaction/user-approval" },
+    { "path": "../../interaction/commands" }
   ]
 }

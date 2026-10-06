@@ -3,7 +3,8 @@
  * venue, the executor, and the tools plugin boot from a test-only cordis.yml through the Loader + Include path. A
  * place_order call asks, submits, and the fill reaches the agent; the journal survives a reboot over the same storage;
  * a misconfigured limit fails the executor at load; disposing each plugin removes its tools, listeners, guard, and
- * order-stream subscription.
+ * order-stream subscription; the user's `/trading` command loads from a Loader entry and leaves when that entry is
+ * disabled.
  */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as AgentModule from '@deepseek-ai/dsh-agent'
+import * as CommandsModule from '@deepseek-ai/dsh-commands'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId, type UserMessage } from '@deepseek-ai/dsh-llm'
@@ -26,6 +28,7 @@ import * as ToolsModule from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import * as ApprovalModule from '@deepseek-ai/dsh-user-approval'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as TradingCommand from '../src/command.ts'
 import * as ToolTrading from '../src/index.ts'
 import * as TradingTools from '../src/tools.ts'
 import * as FakeVenueModule from './fake-venue.ts'
@@ -43,9 +46,11 @@ const modules = new Map<string, unknown>([
   ['@deepseek-ai/dsh-system-prompt', SystemPromptModule],
   ['@deepseek-ai/dsh-tools', ToolsModule],
   ['@deepseek-ai/dsh-user-approval', ApprovalModule],
+  ['@deepseek-ai/dsh-commands', CommandsModule],
   ['fake-trading-venue', FakeVenueModule],
   ['@deepseek-ai/dsh-experimental-tool-trading', ToolTrading],
   ['@deepseek-ai/dsh-experimental-tool-trading/tools', TradingTools],
+  ['@deepseek-ai/dsh-experimental-tool-trading/command', TradingCommand],
 ])
 
 async function boot(trading: readonly string[] | false): Promise<Context> {
@@ -176,5 +181,25 @@ describe('tool-trading real composition', () => {
     const { agent } = await liveAgent(ctx, 'after-dispose')
     expect(await ctx.tools.execute({ callId: ToolCallId('after'), name: 'place_order', arguments: {}, agent,
       signal: new AbortController().signal })).toMatchObject({ isError: false, value: 'ran' })
+  })
+
+  it('loads /trading from a Loader entry, halts and resumes through it, and removes it when the entry is disabled', async () => {
+    const ctx = await boot([])
+    const venue = venueOf(ctx)
+    await ctx.loader.create({ name: '@deepseek-ai/dsh-commands' })
+    const entryId = await ctx.loader.create({ name: '@deepseek-ai/dsh-experimental-tool-trading/command' })
+    await ctx.loader.await()
+    const { agent } = await liveAgent(ctx, 'command-session')
+    const run = async (line: string) => (await ctx.commands.execute(agent, line, [], new AbortController().signal))?.result
+    expect(await run('/trading halt composition')).toEqual({ kind: 'success',
+      text: 'Trading halted. Trading status: halted (paper). Reason: composition.' })
+    expect(venue.status()).toBe('halted')
+    expect(await run('/trading resume')).toEqual({ kind: 'success', text: 'Trading resumed. Trading status: ready (paper).' })
+    expect(venue.resumeCalls).toBe(1)
+    expect(ctx.tools.schemas().some(schema => /halt|resume/i.test(schema.name))).toBe(false)
+    await ctx.loader.update(entryId, { disabled: true })
+    expect(ctx.commands.find(agent, 'trading')).toBeUndefined()
+    expect(await run('/trading halt')).toBeUndefined()
+    expect(venue.status()).toBe('ready')
   })
 })

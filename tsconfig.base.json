@@ -36,6 +36,7 @@
       "@deepseek-ai/dsh-experimental-trading-venue": ["./packages/experimental/trading-venue/src/index.ts"],
       "@deepseek-ai/dsh-experimental-tool-trading": ["./packages/experimental/tool-trading/src/index.ts"],
       "@deepseek-ai/dsh-experimental-tool-trading/tools": ["./packages/experimental/tool-trading/src/tools.ts"],
+      "@deepseek-ai/dsh-experimental-tool-trading/command": ["./packages/experimental/tool-trading/src/command.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": ["./packages/experimental/browser-use-playwright-mcp/src/index.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": ["./packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts"],
       "@deepseek-ai/dsh-experimental-browser-use-stagehand-native": ["./packages/experimental/browser-use-stagehand-native/src/index.ts"],
