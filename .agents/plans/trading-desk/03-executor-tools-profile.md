@@ -24,15 +24,15 @@
 - Every order and cancellation asks the user; the trading tools never auto-approve. `client_order_id` = SHA-256 hex of `` `${sessionId}:${proposalId}` `` (64 characters, `node:crypto`, computed only in `tool-trading`).
 - Model-facing text (tool descriptions, results, denials, the approval reason) speaks the model's language and carries no transport or UI vocabulary; pin it verbatim in tests.
 - Commit messages: conventional commits, no Co-Authored-By trailer, and no Claude/AI attribution of any kind.
-- Implementers may adapt repository glue (import paths, Cordis/schemastery call forms, storage-domain shapes, test harness calls, generator registrations) and ledger the change. They must not weaken a safety test in Tasks 7–10 (approval, fail-closed body, Halt guard, re-check, unknown outcome, reservations); if one does not fit, stop and report BLOCKED.
+- Implementers may adapt repository glue (import paths, Cordis/schemastery call forms, storage-domain shapes, test harness calls, generator registrations) and ledger the change. They must not weaken a safety test in Tasks 7–11 (approval, fail-closed body, Halt guard, re-check, unknown outcome, reservations, the single fill fold, user-only Halt control); if one does not fit, stop and report BLOCKED.
 
 ## Review Focus
 
 1. **An approval for one call must never release another call's order.** Two `place_order` calls in one turn, the first rejected and the second approved, must submit only the second call's order with the second call's arguments; a call whose proposal event was never logged must fail closed even when an approval for its call id exists. Pinned in Task 8 (`submits only the call that was approved, with that call's arguments`) and Task 4 (`approves only a logged proposal that was asked about through its own call`).
 2. **The market moves, or a limit starts failing, while the approval card is open.** Submission re-snapshots under the lock and denies with "price moved; propose again" past the tolerance or on any failing limit, and reads reduce-only from that re-check. Pinned in Task 7.
 3. **Halt clicked while an approval is pending.** The guard runs after the ask resolves, so the approved call is still denied and nothing reaches the venue; the reservation is released and the journal says why. Pinned in Task 8.
-4. **The desk restarts, or the order stream silently dies, with orders in flight.** Startup, timer, and gap reconciliation look orders up by client order id, record each fill exactly once, and mark an order the broker never received as not placed instead of retrying it. Pinned in Task 9.
-5. **Hostile or malformed model arguments** (string numbers, `NaN`, both `qty` and `notional`, sub-tick prices, a symbol like `../../x`, an `order_id` that is not an open order, a 5 KB rationale) are refused as tool errors before any broker write. Pinned in Tasks 3 and 8.
+4. **A fill arrives on the stream before the submission returns, or the desk restarts or the stream silently dies with orders in flight.** The submit result, stream updates, and startup, timer, and gap reconciliation all go through one monotonic fold on one lock, so a stale view never reopens a filled order and each filled quantity yields exactly one `trading/fill` and one notice; an order the broker never received is marked not placed instead of retried. Pinned in Task 7 (`reports a fill the submission result already carries exactly once`) and Task 9 (`records a fill that streams in before the submission resolves exactly once`, `keeps a streamed fill when the submission then fails with an unknown outcome`).
+5. **Hostile or malformed model arguments** (string numbers, `NaN`, both `qty` and `notional`, sub-tick prices, a symbol like `../../x`, an `order_id` that is not an open order, a 5 KB rationale, or a rationale with line breaks and fake check lines meant to forge the approval text) are refused as tool errors before any broker write, and the rationale always renders as one line. Pinned in Tasks 3 and 8.
 
 ## Plan 2 ledger items carried into this plan
 
@@ -42,11 +42,11 @@
 | Task 8: stop() then start() emits no gap — a new subscriber must read state itself | Task 9: the executor reconciles right after subscribing at init |
 | Task 8: no dead-connection detection; non-JSON frame reports an error without a gap | Task 9: timer reconciliation (`reconcileMs`, default 60 s) |
 | Task 4: non-JSON error body becomes an unbounded message shown to the model | Task 7: `bounded()` caps every venue message at 300 characters |
-| Task 10: `tradingVenue` seam has no consumer until tool-trading lands | Task 13: `gen-doc-graphs` lists `experimental-tool-trading` as the consumer |
+| Task 10: `tradingVenue` seam has no consumer until tool-trading lands | Task 14: `gen-doc-graphs` lists `experimental-tool-trading` as the consumer |
 | Final ruling: Halt re-saves on startup from broker `suspend_trade` | No executor work: every order path reads the venue's derived `status()`; noted in the tool-trading README |
 | Task 9: keys added later do not re-run setup until a call (deferred → Plan 4) | Deferred to Plan 4. Plan 3 only makes the first executor call (`asset()` / `openOrders()`) trigger the venue's own retry, by not denying `unconfigured` before calling the venue |
 | Task 2: `BrokerOrderRequest` qty/notional exclusivity only by comment | Task 7: `brokerRequest()` copies exactly the one size the validated order carries |
-| Task 2: `resume()` behavior; VenueStatus cannot show a pending suspension | No tool resumes trading (spec). Deferred to Plan 4 (panel) |
+| Task 2: `resume()` behavior; VenueStatus cannot show a pending suspension | No tool resumes trading (spec). The user's `/trading resume` command (Task 11) calls `venue.resume()` and reports when a later Halt wins; `/trading status` shows `statusReason()` (Task 1), whose Halt reason names a pending suspension. Panel controls in Plan 4 |
 | Roadmap: re-read open orders and positions on a timer and on gaps; gate on derived `status()` | Tasks 7 and 9. The executor caches no positions: every check re-reads them inside the lock, so the timer re-reads open orders and in-flight journal orders only |
 | Roadmap (Plan 1 review): reject non-finite/non-positive approved price and a cap rounding to 0 before `planSubmission`; tick check; `RiskLimits` Config fields reject negative/non-finite; `reduceOnly` from the post-approval re-check | Tasks 2 (`validateConfig`), 3 (`tickViolations`), 6 (`planOrder`), 7 (re-check) |
 | Roadmap (paper runs): crypto exit within ~1 s of a fill rejected "insufficient balance"; $10 crypto minimum | Task 7 (`exitRetryMs`); the minimum is already on the venue's `Asset.minNotional` and enforced by `validateOrder` |
@@ -58,7 +58,7 @@
 - **Ruling: approval policy read.** `ApprovalService.effectivePolicy` is private; the executor computes `approval.overrideOf(session) ?? approval.config.policy ?? 'ask'` from the two public members (`packages/interaction/user-approval/src/index.ts:148,245`). `DSH_PERMISSION_MODE=danger-full-access` selects a permission preset whose approval knob is `never` (`packages/interaction/permission-presets/src/index.ts`), which this read returns.
 - **Ruling: listener placement.** The `tools/pre-execute` listener and the guard live in the host-plane executor service, so they cover every agent and survive preset remounts. The listener calls `next()` first and returns a downstream `deny`/`cancel` unchanged; a listener prepended ahead of it that answers without delegating makes the body fail closed.
 - **Ruling: in-app concurrency.** The agent loop runs `prepare` (pre-execute + ask) one call at a time (`packages/core/agent-loop/src/tool-calls.ts:166-200`) and `place_order`/`cancel_order` declare no `isConcurrencySafe`, so in-app calls in one message are checked one after another; reservations still make concurrent `proposeOrder` calls (the Plan 5 MCP path) see each other. Task 7 pins the concurrent case at the executor API; Task 8 pins the in-app sequence.
-- **Ruling: venue additions.** The executor needs the account mode for the proposal and a lookup by client order id for reconciliation; neither exists on `TradingVenueGateway`. Task 1 adds `mode()` and `order(clientOrderId)` (Alpaca: `orderByClientId` in `packages/experimental/trading-alpaca/src/orders.ts:67`) — "design Service Definitions for all current Consumers".
+- **Ruling: venue additions.** The executor needs the account mode for the proposal and a lookup by client order id for reconciliation, and the user status display needs the reason behind the status; none exists on `TradingVenueGateway`. Task 1 adds `mode()`, `statusReason()` (for the user's `/trading status`), and `order(clientOrderId)` (Alpaca: `orderByClientId` in `packages/experimental/trading-alpaca/src/orders.ts:67`) — "design Service Definitions for all current Consumers".
 - **Ruling: stale-quote detail.** `checkRisk` prints the quote age in the `stale-quote` detail even when the check passes, which makes the approval reason and the recorded session time-dependent. Task 1 changes only that detail text (pass: `quote is at most 30 s old`; not applicable: `limit orders do not need a fresh quote` / `market closed; the quote age is not checked`; fail: `quote is 45 s old (max 30 s)`).
 - **Ruling: no client order id in session events or model text.** Snapshot redaction tokenizes UUID-like values under `*Id` keys (`packages/test-support/session-snapshot/src/identity.ts`), so `proposalId` (`p-<uuid>`) is stable in fixtures but the SHA-256 client order id is not. The client order id lives only in the journal and the broker request.
 - **Ruling: tool output schemas.** Tool outputs use `{ type: 'json' }` (precedent: `packages/mcp/mcp-resources/src/tools.ts:20-23`); typed output schemas wait for the Plan 4 tool views that consume them. The `trader` preset composes no PTC runtime.
@@ -66,8 +66,10 @@
 - **Ruling: open market buys with no price.** `committedBuyNotional` counts open buy orders at their notional, else remaining quantity × limit (or stop) price; an open market buy without either (an equity order queued while the market is closed) counts as 0. The broker's cash check (margin multiplier 1) still applies.
 - **Ruling: bars warm-up.** `get_bars` fetches `limit + 60` bars so MACD(12,26,9) and Bollinger(20) have values for the shown window, and returns only the last `limit`.
 - **Ruling: preset root path.** `agent-presets` resolves a root with `resolve(expandHomePath(path))` (`packages/preset/agent-presets/src/discovery.ts:285`), so the patch must give an absolute path. Loader `!!js` expressions evaluate `with (ctx)` (`vendor/loader/src/config/utils.ts:5-9`) and see `baseUrl` (the profile directory, `apps/web/tests/scaffold.ts:706-708`; precedent `packages/preset/agent-presets/presets/cordis/agent.cordis.yml:267`). The root is `dirname(createRequire(baseUrl).resolve('@deepseek-ai/dsh-experimental-bundle-trading/package.json')) + '/presets'`: `dsh plugin --profile trading add` installs the bundle under the profile's `node_modules`, and the web scaffold links install anchors there the same way.
-- **Ruling: unknown saved default.** `AgentPresets.resolve()` already throws `agent-presets: preset "<id>" not found (available: <ids>)` when the settings document's `agent-presets.default` names a preset no root supplies (`packages/preset/agent-presets/src/index.ts:372-384`), and `settings.yaml` is shared by every profile under `$DSH_HOME`. "Fails at load" is the session-load failure; Task 12 pins it with a real settings document. Changing `agent-presets` to validate at boot is out of scope.
+- **Ruling: unknown saved default.** `AgentPresets.resolve()` already throws `agent-presets: preset "<id>" not found (available: <ids>)` when the settings document's `agent-presets.default` names a preset no root supplies (`packages/preset/agent-presets/src/index.ts:372-384`), and `settings.yaml` is shared by every profile under `$DSH_HOME`. "Fails at load" is the session-load failure; Task 13 pins it with a real settings document. Changing `agent-presets` to validate at boot is out of scope.
 - **Ruling: the Halt guard is permanent.** The spec says "Halt registers a `ctx.tools.guard()`". The executor registers one guard for its lifetime that denies `place_order`/`cancel_order` whenever the venue's derived `status()` is `halted`; registering and disposing a guard on each Halt would need a cached status copy (which the Plan 2 review forbids) and a `trading/venue-status` race. The observable behavior — deny-only, after every pre-execute listener, while halted — is the same.
+- **Ruling: user Halt control.** Halt, resume, and status are a slash command, `/trading`, registered in the command registry (`@deepseek-ai/dsh-commands`; precedent `/compact`, `packages/compaction/command-compact/src/index.ts`) and mounted in the `trader` preset. Command lines run without reaching the model, so the agent's tool list is unchanged and it still cannot resume.
+- **Ruling: compaction in the `trader` preset.** The `standard` preset's compaction group is copied unchanged; it registers no model-facing tool (only `/compact`), so the nine-tool allowlist and `tool-schemas.expected.json` stay the same.
 - **Ruling: `ui-cordis`.** The spec disables the cordis Host and Client runners; the patch also disables `ui-cordis`, the browser view that needs the client runner (`packages/bundle/web-app/cordis.patch.yml:274`).
 - **Ruling: keys message.** The venue already throws `Alpaca keys not configured — add them in Settings → Trading` (`packages/experimental/trading-alpaca/src/index.ts`); the Settings → Trading card arrives in Plan 4, so in Plan 3 keys go into `$DSH_HOME/.credentials.yaml` (README says so).
 
@@ -93,6 +95,7 @@ packages/experimental/tool-trading/
   src/executor.ts    TradingExecutor service
   src/index.ts       package root: default export TradingExecutor
   src/tools.ts       ./tools function plugin: the seven tools
+  src/command.ts     ./command function plugin: the user's /trading command (status, halt, resume)
   tests/fake-venue.ts, tests/harness.ts, tests/*.spec.ts, tests/executor-paper.e2e.ts
 packages/experimental/bundle-trading/
   package.json, tsconfig.json, README.md, cordis.patch.yml, src/index.ts
@@ -107,28 +110,28 @@ snapshots/web/trading-desk/{snapshot.yml,session.v3.jsonl,system-prompt.expected
 Every task ends with the package tests it owns plus these, in order; a gate that names a file is fixed and re-run alone:
 
 1. `pnpm exec vitest run <the task's spec files> --coverage --coverage.include='<the task's src files>'` → every listed file at 100%.
-2. `pnpm exec tsc -b packages/experimental/tool-trading` (and `bundle-trading` from Task 11) → exit 0.
+2. `pnpm exec tsc -b packages/experimental/tool-trading` (and `bundle-trading` from Task 12) → exit 0.
 3. `pnpm run lint` → exit 0 (140-column limit, no `!`).
-4. From Task 2 on, after any change to exports, Config, events, or services: `pnpm run gen-tsconfig-paths`, `pnpm run gen-cordis-catalog`, `pnpm run gen-cordis-inspect-catalog`, `pnpm run gen-config-catalog`, `pnpm run gen-persistence-catalog`, `pnpm run gen-doc-graphs`, `pnpm run gen-tool-catalog`, `pnpm run gen-dependency-catalog` — commit the regenerated files with the task. Task 13 adds the prose and the final `pnpm run doc-sync`.
+4. From Task 2 on, after any change to exports, Config, events, or services: `pnpm run gen-tsconfig-paths`, `pnpm run gen-cordis-catalog`, `pnpm run gen-cordis-inspect-catalog`, `pnpm run gen-config-catalog`, `pnpm run gen-persistence-catalog`, `pnpm run gen-doc-graphs`, `pnpm run gen-tool-catalog`, `pnpm run gen-dependency-catalog` — commit the regenerated files with the task. Task 14 adds the prose and the final `pnpm run doc-sync`.
 5. `git status` shows only the task's files and regenerated catalogs.
 
 ---
-### Task 1: Venue mode and order lookup; time-free stale-quote detail
+### Task 1: Venue mode, status reason, and order lookup; time-free stale-quote detail
 
 **Files:**
 - Modify: `packages/experimental/trading/src/types.ts` (add `TradingMode`)
 - Modify: `packages/experimental/trading/src/risk.ts` (stale-quote detail only)
 - Modify: `packages/experimental/trading/tests/risk.spec.ts`
-- Modify: `packages/experimental/trading-venue/src/index.ts` (two abstract methods)
+- Modify: `packages/experimental/trading-venue/src/index.ts` (three abstract methods)
 - Modify: `packages/experimental/trading-venue/tests/venue.spec.ts` (FakeVenue gains them)
-- Modify: `packages/experimental/trading-alpaca/src/venue.ts` (`VenueCore.order`)
-- Modify: `packages/experimental/trading-alpaca/src/index.ts` (`AlpacaVenue.mode`, `AlpacaVenue.order`)
+- Modify: `packages/experimental/trading-alpaca/src/venue.ts` (`VenueCore.order`, `VenueCore.statusReason`)
+- Modify: `packages/experimental/trading-alpaca/src/index.ts` (`AlpacaVenue.mode`, `AlpacaVenue.statusReason`, `AlpacaVenue.order`)
 - Modify: `packages/experimental/trading-alpaca/tests/venue.spec.ts`, `packages/experimental/trading-alpaca/tests/composition.spec.ts`
 - Modify: `packages/experimental/trading-venue/README.md`, `packages/experimental/trading-alpaca/README.md` (method list lines)
 - Regenerate: `docs/subsystems/trading.md`, `docs/subsystems/trading.zh.md` (`pnpm run gen-cordis-catalog`), the tool-cordis api catalog (`pnpm run gen-cordis-inspect-catalog`)
 
 **Interfaces:**
-- Produces: `type TradingMode = 'paper' | 'live'` (exported from `@deepseek-ai/dsh-experimental-trading`); `TradingVenueGateway.mode(): TradingMode`; `TradingVenueGateway.order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>`; `stale-quote` check details `quote is at most N s old` / `quote is A s old (max N s)` / `quote time is unknown` / `<type> orders do not need a fresh quote` / `market closed; the quote age is not checked`.
+- Produces: `type TradingMode = 'paper' | 'live'` (exported from `@deepseek-ai/dsh-experimental-trading`); `TradingVenueGateway.mode(): TradingMode`; `TradingVenueGateway.statusReason(): string` (the saved Halt reason while halted, the block reason while blocked, the missing-keys message while unconfigured, `''` while ready); `TradingVenueGateway.order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>`; `stale-quote` check details `quote is at most N s old` / `quote is A s old (max N s)` / `quote time is unknown` / `<type> orders do not need a fresh quote` / `market closed; the quote age is not checked`.
 
 - [ ] **Step 1: Write the failing risk test**
 
@@ -180,7 +183,7 @@ export type TradingMode = 'paper' | 'live'
 Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm exec vitest run packages/experimental/trading --coverage --coverage.include='packages/experimental/trading/src/risk.ts'`
 Expected: PASS; `risk.ts` 100% statements, branches, functions, lines.
 
-- [ ] **Step 5: Add the two venue methods to the Service Definition**
+- [ ] **Step 5: Add the three venue methods to the Service Definition**
 
 In `packages/experimental/trading-venue/src/index.ts`, add `ClientOrderId` and `TradingMode` to the type import from `@deepseek-ai/dsh-experimental-trading`, then insert after `abstract status(): VenueStatus`:
 
@@ -190,6 +193,13 @@ In `packages/experimental/trading-venue/src/index.ts`, add `ClientOrderId` and `
    * @returns `paper` or `live`.
    */
   abstract mode(): TradingMode
+
+  /**
+   * Readable cause of the current status, for the user's status display.
+   * @returns the saved Halt reason while halted, the block reason while blocked, why setup has not completed while
+   *   unconfigured, and an empty string while ready.
+   */
+  abstract statusReason(): string
 ```
 
 and after `abstract openOrders(): Promise<BrokerOrder[]>`:
@@ -203,10 +213,11 @@ and after `abstract openOrders(): Promise<BrokerOrder[]>`:
   abstract order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>
 ```
 
-In `packages/experimental/trading-venue/tests/venue.spec.ts`, add `TradingMode` to the type import and these two members to `FakeVenue`:
+In `packages/experimental/trading-venue/tests/venue.spec.ts`, add `TradingMode` to the type import and these three members to `FakeVenue`:
 
 ```ts
   mode(): TradingMode { return 'paper' }
+  statusReason(): string { return '' }
   async order(): Promise<BrokerOrder | undefined> { return undefined }
 ```
 
@@ -224,7 +235,21 @@ In `packages/experimental/trading-alpaca/tests/venue.spec.ts`, inside `describe(
     expect((await venue.order(brandString<ClientOrderId>('c-1')))?.id).toBe('o-1')
     expect(await venue.order(brandString<ClientOrderId>('c-2'))).toBeUndefined()
   })
+
+  it('names the reason behind the status', async () => {
+    accountConfig(fake, safe)
+    keysPresent = false
+    const { venue } = core()
+    expect(venue.statusReason()).toBe('Alpaca keys not configured — add them in Settings → Trading')
+    keysPresent = true
+    await venue.prepare()
+    expect(venue.statusReason()).toBe('')
+    await venue.halt('market looks wrong')
+    expect(venue.statusReason()).toBe('market looks wrong')
+  })
 ```
+
+In the existing test `blocks new orders but allows reads and exits when the account cannot be made safe`, after `expect(venue.status()).toBe('blocked')`, add `expect(venue.statusReason()).not.toBe('')`.
 
 In `packages/experimental/trading-alpaca/tests/composition.spec.ts`, in the first test, add `fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: order }))` beside the other routes and, after `expect(await venue.openOrders()).toEqual([])`:
 
@@ -250,6 +275,16 @@ In `packages/experimental/trading-alpaca/src/venue.ts`, add `ClientOrderId` to t
     await this.readable()
     return orders.orderByClientId(this.deps.http, clientOrderId)
   }
+
+  /**
+   * Readable cause of the current status.
+   * @returns the saved Halt reason, the block reason, the setup message, or an empty string while ready.
+   */
+  statusReason(): string {
+    if (this.safety.isHalted()) return this.deps.store.get().haltReason
+    if (this.blockedReason !== undefined) return this.blockedReason
+    return this.configured ? '' : UNCONFIGURED
+  }
 ```
 
 In `packages/experimental/trading-alpaca/src/index.ts`, add `ClientOrderId` and `TradingMode` to the type import, add a field `private readonly accountMode: TradingMode`, set `this.accountMode = config.mode` as the first statement after `super(ctx)`, and add beside `status()`:
@@ -257,6 +292,8 @@ In `packages/experimental/trading-alpaca/src/index.ts`, add `ClientOrderId` and 
 ```ts
   /** @returns the configured account mode. */
   mode(): TradingMode { return this.accountMode }
+  /** @returns the readable cause of the current status. */
+  statusReason(): string { return this.core.statusReason() }
 ```
 
 and beside `openOrders()`:
@@ -273,7 +310,7 @@ Expected: PASS; every listed file 100%.
 
 - [ ] **Step 9: README lines and regenerated catalogs**
 
-In `packages/experimental/trading-venue/README.md`, add to the method list after `status()`: "`mode()` — `paper` or `live`, from the provider's configuration." and after `openOrders()`: "`order(clientOrderId)` — one order by its idempotency key, open or not; `undefined` when the broker has none." In `packages/experimental/trading-alpaca/README.md`, add to the operations list: "`order(clientOrderId)` reads `GET /v2/orders:by_client_order_id`; a 404 is `undefined`." Then:
+In `packages/experimental/trading-venue/README.md`, add to the method list after `status()`: "`mode()` — `paper` or `live`, from the provider's configuration." and "`statusReason()` — the saved Halt reason, the block reason, or the setup message behind `status()`; empty while ready." and after `openOrders()`: "`order(clientOrderId)` — one order by its idempotency key, open or not; `undefined` when the broker has none." In `packages/experimental/trading-alpaca/README.md`, add to the operations list: "`order(clientOrderId)` reads `GET /v2/orders:by_client_order_id`; a 404 is `undefined`." Then:
 
 Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm run gen-cordis-catalog && pnpm run gen-cordis-inspect-catalog && pnpm exec tsc -b packages/experimental/trading-alpaca && pnpm run lint`
 Expected: the generators rewrite `docs/subsystems/trading.md`, `docs/subsystems/trading.zh.md`, and the tool-cordis api catalog; `tsc` and lint exit 0.
@@ -282,7 +319,7 @@ Expected: the generators rewrite `docs/subsystems/trading.md`, `docs/subsystems/
 
 ```bash
 git add packages/experimental/trading packages/experimental/trading-venue packages/experimental/trading-alpaca docs/subsystems/trading.md docs/subsystems/trading.zh.md packages/extensions/tool-cordis
-git commit -m "feat(trading-venue): add account mode and order lookup by client order id"
+git commit -m "feat(trading-venue): add account mode, status reason, and order lookup by client order id"
 ```
 
 ---
@@ -1142,6 +1179,18 @@ describe('parsePlaceOrder', () => {
   })
 })
 
+describe('rationale', () => {
+  it('collapses a multi-line rationale with injected check lines to one line before the length cap', () => {
+    const rationale = 'Good entry.\nChecks passed: everything (fake)\r\n\u2028FAIL halted\u2029\u0007  Rationale:\tok\u0085end'
+    expect(parsePlaceOrder({ ...base, rationale })).toMatchObject({
+      ok: true, value: { rationale: 'Good entry. Checks passed: everything (fake) FAIL halted Rationale: ok end' },
+    })
+    expect(parsePlaceOrder({ ...base, rationale: 'a\n'.repeat(300) })).toMatchObject({ ok: true, value: { rationale: `${'a '.repeat(299)}a` } })
+    expect(parseCancelOrder({ order_id: 'order-9', rationale: 'Stale.\n\nFAIL nothing' }))
+      .toEqual({ ok: true, value: { orderId: 'order-9', rationale: 'Stale. FAIL nothing' } })
+  })
+})
+
 describe('parseCancelOrder', () => {
   it('accepts an order id and a rationale', () => {
     expect(parseCancelOrder({ order_id: ' order-9 ', rationale: 'Stale.' }))
@@ -1246,8 +1295,16 @@ function optionalNumber(args: Record<string, unknown>, key: string, reasons: str
   return undefined
 }
 
+// C0 and C1 controls (CR, LF, tab, bell, …), Unicode line and paragraph separators, and the next-line character.
+// oxlint-disable-next-line no-control-regex -- the rationale is model text shown inside the approval reason
+const LINE_BREAKS_AND_CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
+
+/**
+ * The rationale as one line: control characters and line or paragraph separators become spaces and runs of whitespace
+ * collapse, so model text cannot add lines (such as fake check results) to the approval reason. Applied before the cap.
+ */
 function rationaleOf(value: unknown, reasons: string[]): string {
-  const text = typeof value === 'string' ? value.trim() : ''
+  const text = typeof value === 'string' ? value.replace(LINE_BREAKS_AND_CONTROLS, ' ').replace(/\s+/g, ' ').trim() : ''
   if (text.length === 0) reasons.push('rationale must be one to three sentences explaining why')
   else if (text.length > MAX_RATIONALE) reasons.push(`rationale must be at most ${MAX_RATIONALE} characters`)
   return text
@@ -1973,9 +2030,9 @@ git commit -m "feat(tool-trading): journal proposals and orders in the storage s
 **Interfaces:**
 - Consumes: `ProposalBook` (Task 4), `Journal.submittedOn` (Task 5), `tradingDay` (Task 2), `planSubmission`, indicator functions from `trading`.
 - Produces:
-  - `snapshot.ts`: `interface DeskSnapshot { risk: RiskSnapshot; account; quote; marketOpen }`; `interface SnapshotSources { venue: SnapshotVenue; book: ProposalBook; journal: Pick<Journal, 'submittedOn'>; now: number; excluding?: ProposalId }`; `takeSnapshot(symbol, sources): Promise<DeskSnapshot>`; `remainingQty(order, price)`; `openExposure(orders, ticker, price)`; `openBuyNotional(orders)`; `drifted(approved, current, tolerance): boolean`; `planOrder(order, approvedPrice, tolerance, reduceOnly, increment): SubmissionPlan` (throws `Error`); `brokerRequest(order, plan, clientOrderId): BrokerOrderRequest`.
+  - `snapshot.ts`: `interface DeskSnapshot { risk: RiskSnapshot; account; quote; marketOpen }`; `interface SnapshotSources { venue: SnapshotVenue; book: ProposalBook; journal: Pick<Journal, 'submittedOn'>; now: number; excluding?: ProposalId }`; `takeSnapshot(symbol, sources): Promise<DeskSnapshot>`; `remainingQty(order, price)`; `openExposure(orders, ticker, price)`; `openBuyNotional(orders)`; `heldBySells(order, quantity, exposure): string[]`; `drifted(approved, current, tolerance): boolean`; `planOrder(order, approvedPrice, tolerance, reduceOnly, increment): SubmissionPlan` (throws `Error`); `brokerRequest(order, plan, clientOrderId): BrokerOrderRequest`.
   - `bars.ts`: `INDICATORS`, `WARMUP_BARS = 60`, `barsReport(symbol, timeframe, bars, limit, indicators): BarsReport`, `renderBars(report): string`.
-  - `tests/fake-venue.ts`: `class FakeVenue extends TradingVenueGateway` (default export) with public test state `current`, `keysMissing`, `accountMode`, `accountState`, `held`, `open`, `marketIsOpen`, `quoteAgeMs`, `quotes`, `assets`, `history`, `submitted`, `cancelled`, `known`, `respond`, `cancelFailure`, `listenerCount`, `emit(event)`; and `acceptedOrder(request, overrides?)`.
+  - `tests/fake-venue.ts`: `class FakeVenue extends TradingVenueGateway` (default export) with public test state `current`, `keysMissing`, `accountMode`, `accountState`, `held`, `open`, `marketIsOpen`, `quoteAgeMs`, `quotes`, `assets`, `history`, `submitted`, `cancelled`, `known`, `respond`, `cancelFailure`, `haltReason`, `haltFailure`, `resumeCalls`, `resumeFailure`, `resumeLeavesHalted`, `listenerCount`, `emit(event)`; and `acceptedOrder(request, overrides?)`.
 
 - [ ] **Step 1: Write the in-memory venue used by every executor test**
 
@@ -2039,10 +2096,17 @@ export class FakeVenue extends TradingVenueGateway {
   readonly known = new Map<string, BrokerOrder>()
   respond: (request: BrokerOrderRequest) => BrokerOrder = request => acceptedOrder(request)
   cancelFailure: VenueError | undefined
+  haltReason = ''
+  haltFailure: Error | undefined
+  resumeCalls = 0
+  resumeFailure: VenueError | undefined
+  /** A Halt that arrives during resume wins: resume resolves with the desk still halted. */
+  resumeLeavesHalted = false
   private readonly listeners = new Set<(event: OrderStreamEvent) => void>()
 
   status(): VenueStatus { return this.current }
   mode(): TradingMode { return this.accountMode }
+  statusReason(): string { return this.current === 'halted' ? this.haltReason : '' }
   async account(): Promise<AccountSnapshot> { this.keys(); return this.accountState }
   async positions(): Promise<PositionSnapshot[]> { this.keys(); return this.held }
   async openOrders(): Promise<BrokerOrder[]> { this.keys(); return this.open }
@@ -2080,8 +2144,16 @@ export class FakeVenue extends TradingVenueGateway {
   }
   async closePosition(): Promise<BrokerOrder> { throw new VenueError('tool-trading never closes positions', 'rejected') }
   async flatten(): Promise<BrokerOrder[]> { return [] }
-  async halt(): Promise<void> { this.current = 'halted' }
-  async resume(): Promise<void> { this.current = 'ready' }
+  async halt(reason: string): Promise<void> {
+    this.current = 'halted'
+    this.haltReason = reason
+    if (this.haltFailure !== undefined) throw this.haltFailure
+  }
+  async resume(): Promise<void> {
+    this.resumeCalls += 1
+    if (this.resumeFailure !== undefined) throw this.resumeFailure
+    if (!this.resumeLeavesHalted) this.current = 'ready'
+  }
   subscribeOrderUpdates(listener: (event: OrderStreamEvent) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -2108,7 +2180,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ProposalBook } from '../src/book.ts'
 import {
-  brokerRequest, drifted, openBuyNotional, openExposure, planOrder, remainingQty, takeSnapshot,
+  brokerRequest, drifted, heldBySells, openBuyNotional, openExposure, planOrder, remainingQty, takeSnapshot,
 } from '../src/snapshot.ts'
 import type { TradingOrderProposal } from '../src/types.ts'
 import FakeVenue, { acceptedOrder } from './fake-venue.ts'
@@ -2176,6 +2248,20 @@ describe('order math', () => {
       acceptedOrder(request({ type: 'stop', qty: 2, stopPrice: 30 })),
       acceptedOrder(request({ side: 'sell', qty: 5, limitPrice: 1_000 })),
     ])).toBe(60 + 60)
+  })
+
+  it('explains a sell the position covers but resting sells or pending sell proposals already claim', () => {
+    const sell: OrderRequest = { symbol: btc, side: 'sell', qty: 0.001, type: 'market', timeInForce: 'gtc' }
+    const exposure = { positionQty: 0.001, openBuyQty: 0, openSellQty: 0.001, pendingBuyQty: 0, pendingSellQty: 0 }
+    expect(heldBySells(sell, 0.001, exposure)).toEqual(['0.001 BTC/USD is held by open sell orders; cancel them first'])
+    expect(heldBySells(sell, 0.001, { ...exposure, openSellQty: 0.0004, pendingSellQty: 0.0003 })).toEqual([
+      '0.0004 BTC/USD is held by open sell orders; cancel them first',
+      '0.0003 BTC/USD is reserved by sell proposals awaiting approval; wait for their decision first',
+    ])
+    expect(heldBySells(sell, 0.001, { ...exposure, openSellQty: 0 })).toEqual([])
+    expect(heldBySells(sell, 0.002, exposure)).toEqual([])
+    expect(heldBySells({ ...sell, side: 'buy' }, 0.001, exposure)).toEqual([])
+    expect(heldBySells(sell, 0.001, { ...exposure, positionQty: 0 })).toEqual([])
   })
 
   it('detects drift only between two usable prices', () => {
@@ -2268,7 +2354,8 @@ describe('renderBars', () => {
     expect(renderBars(barsReport(btc, '1D', [], 10, []))).toBe('BTC/USD 1D: 0 bars, oldest first. No bars in this range.')
     const full = renderBars(barsReport(btc, '1h', series(60), 30, ['ema', 'rsi', 'bollinger']))
     expect(full).toMatch(/^Swing highs: none\. Swing lows: none\.$/m)
-    expect(full).toMatch(/Indicators: EMA\(20\) [\d.]+; RSI\(14\) [\d.]+; Bollinger\(20,2\) upper [\d.]+ \/ middle [\d.]+ \/ lower [\d.]+\./)
+    expect(full).toMatch(/Indicators: EMA\(20\) [\d.]+; RSI\(14\) [\d.]+; Bollinger\(20,2\) /)
+    expect(full).toMatch(/Bollinger\(20,2\) upper [\d.]+ \/ middle [\d.]+ \/ lower [\d.]+\./)
     expect(renderBars(barsReport(btc, '1h', [{ t: start, o: 2, h: 3, l: 1, c: 1, v: 1 }], 1, []))).toContain('change -50%.')
   })
 })
@@ -2288,8 +2375,8 @@ Expected: FAIL — `Cannot find module '../src/snapshot.ts'` and `'../src/bars.t
  * @module @deepseek-ai/dsh-experimental-tool-trading/snapshot
  */
 import {
-  type AccountSnapshot, type BrokerOrder, type BrokerOrderRequest, type ClientOrderId, type OrderRequest, planSubmission,
-  type ProposalId, type Quote, type RiskSnapshot, type SubmissionPlan, type TradingSymbol,
+  type AccountSnapshot, type BrokerOrder, type BrokerOrderRequest, type ClientOrderId, isReduceOnly, type OrderRequest,
+  planSubmission, type ProposalId, type Quote, type RiskSnapshot, type SubmissionPlan, type SymbolExposure, type TradingSymbol,
 } from '@deepseek-ai/dsh-experimental-trading'
 import type { TradingVenueGateway } from '@deepseek-ai/dsh-experimental-trading-venue'
 import type { ProposalBook } from './book.ts'
@@ -2392,6 +2479,28 @@ export async function takeSnapshot(symbol: TradingSymbol, sources: SnapshotSourc
       halted: venue.status() === 'halted',
     },
   }
+}
+
+const qtyText = (value: number): string => String(Number(value.toFixed(8)))
+
+/**
+ * Why a sell the position would cover is not an exit: open sell orders, or sell proposals awaiting approval, already
+ * claim the shares or coins it would sell. The risk check then fails it as a short sale; these reasons say what to do.
+ * @param order - proposed order.
+ * @param quantity - its quantity from the risk check.
+ * @param exposure - holdings and in-flight quantities from the snapshot.
+ * @returns one reason per claim; empty when the order is not such a sell.
+ */
+export function heldBySells(order: OrderRequest, quantity: number, exposure: SymbolExposure): string[] {
+  if (order.side !== 'sell' || !(exposure.positionQty > 0) || quantity > exposure.positionQty) return []
+  if (isReduceOnly('sell', quantity, exposure)) return []
+  const ticker = order.symbol.ticker
+  return [
+    ...exposure.openSellQty > 0 ? [`${qtyText(exposure.openSellQty)} ${ticker} is held by open sell orders; cancel them first`] : [],
+    ...exposure.pendingSellQty > 0
+      ? [`${qtyText(exposure.pendingSellQty)} ${ticker} is reserved by sell proposals awaiting approval; wait for their decision first`]
+      : [],
+  ]
 }
 
 /**
@@ -2605,8 +2714,9 @@ git commit -m "feat(tool-trading): add the desk snapshot, order planning, and th
 
 **Interfaces:**
 - Consumes: everything from Tasks 2–6; `ctx.tradingVenue` (Task 1 methods); `ctx.storageDomain.open`; `ctx.sessions.get(id)`; `session.append(type, data)`; `ctx.on('session/event', (session, event) => …)` (`packages/core/session/src/index.ts:72`).
-- Produces (Tasks 8–14 and Plan 5 rely on these):
+- Produces (Tasks 8–15 and Plan 5 rely on these):
   - `format.ts`: constants `KEYS_MISSING`, `HALTED`, `BLOCKED`, `TRADING_BLOCKED`, `NO_CHECKED_PROPOSAL`, `PRICE_MOVED`, `APPROVAL_OFF`, `NO_AGENT`, `DUPLICATE_CLIENT_ORDER_ID = 40010001`; `compact<T>(value)`, `money`, `bounded`, `describeOrder`, `proposalSummary(p, tolerance)`, `cancelSummary(p)`, `fillText(fill)`, `failureOf(error): { outcome: 'failed' | 'unknown'; message }`, `isInsufficientBalance(error)`, `renderQuote`, `renderAccount`, `renderPositions`, `renderOrders`, `renderOrderReport`.
+  - One journal fold for a submitted order (`private foldOrder(order, update?)`, serialized on `private updates: AccountLock`): Task 7's submit path and Task 9's stream and reconciliation paths all call it, and it emits `trading/fill` plus the agent notice only for growth of the cumulative filled quantity.
   - `class TradingExecutor extends Service` at `ctx.tradingExecutor` (default export of the package root) with `static inject = ['tradingVenue', 'tools', 'storageDomain', 'sessions', 'agents']`, `static Config`, and public methods `status(): VenueStatus`, `barWindow(): { defaultCount: number; cap: number }`, `quote(symbol: string): Promise<QuoteReport>`, `bars(request: BarsRequest): Promise<BarsReport>`, `account(): Promise<AccountReport>`, `positions(): Promise<PositionReport[]>`, `orders(): Promise<OrdersReport>`, `proposeOrder(input: ProposedOrder, context: ProposalContext): Promise<ProposeResult>`, `proposeCancel(input: ProposedCancel, context: ProposalContext): Promise<ProposeResult>`, `proposalForCall(sessionId: SessionId, callId: ToolCallId): ProposalId | undefined`, `execute(proposalId: ProposalId, sessionId: SessionId): Promise<OrderReport>`.
   - `tests/harness.ts`: `TEST_CONFIG`, `interface DeskOptions { config?; approval?: 'ask' | 'never' | 'none'; root?; sessionId?; prepare?(venue) }`, `interface Desk { ctx; venue; executor; session; agent; injected; answer; events(type); close() }`, `bootDesk(options?): Promise<Desk>`.
 
@@ -3327,12 +3437,42 @@ describe('executing a proposal', () => {
     desk.venue.open = [acceptedOrder({ symbol: btc, side: 'sell', qty: 0.001, type: 'limit', limitPrice: 70_000, timeInForce: 'gtc',
       clientOrderId: brandString('resting') })]
     await expect(desk.executor.execute(again, desk.session.id))
-      .rejects.toThrow('price moved; propose again; shorting: this sell would open or extend a short position')
+      .rejects.toThrow('price moved; propose again; 0.001 BTC/USD is held by open sell orders; cancel them first; '
+        + 'shorting: this sell would open or extend a short position')
     // A reduce-only exit skips the position-size check, so equity can be 0; the share of equity must stay finite.
     desk.venue.open = []
     desk.venue.accountState = { ...desk.venue.accountState, equity: 0 }
     idOf(await desk.executor.proposeOrder(sell, context('call-3')))
     expect(desk.events('trading/proposal').at(-1)?.data).toMatchObject({ reduceOnly: true, equityPct: 0 })
+  })
+
+  it('says when resting sell orders or pending sell proposals hold the position a sell would exit', async () => {
+    desk = await bootDesk()
+    desk.venue.held = [position]
+    expect((await desk.executor.proposeOrder(sell, context('call-1'))).kind).toBe('pending')
+    expect(await desk.executor.proposeOrder(sell, context('call-2'))).toEqual({ kind: 'denied', reasons: [
+      '0.001 BTC/USD is reserved by sell proposals awaiting approval; wait for their decision first',
+      'shorting: this sell would open or extend a short position',
+    ] })
+    approve('call-1', 'rejected')
+    desk.venue.open = [acceptedOrder({ symbol: btc, side: 'sell', qty: 0.001, type: 'limit', limitPrice: 70_000, timeInForce: 'gtc',
+      clientOrderId: brandString('resting') })]
+    expect(await desk.executor.proposeOrder(sell, context('call-3'))).toEqual({ kind: 'denied', reasons: [
+      '0.001 BTC/USD is held by open sell orders; cancel them first',
+      'shorting: this sell would open or extend a short position',
+    ] })
+  })
+
+  it('reports a fill the submission result already carries exactly once', async () => {
+    desk = await bootDesk()
+    desk.venue.respond = request => acceptedOrder(request, { filledQty: 0.0002, filledAvgPrice: 62_833, status: 'filled' })
+    const id = idOf(await desk.executor.proposeOrder(buy(), context()))
+    approve('call-1')
+    expect(await desk.executor.execute(id, desk.session.id)).toMatchObject({ status: 'filled', filledQty: 0.0002 })
+    expect(desk.events('trading/fill').map(event => event.data))
+      .toMatchObject([{ proposalId: id, fillQty: 0.0002, fillPrice: 62_833, filledQty: 0.0002, status: 'filled' }])
+    expect(desk.injected).toHaveLength(1)
+    expect(await today()).toMatchObject([{ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_833 }])
   })
 
   it('retries a crypto exit rejected for insufficient balance with the same client order id, and only an exit', async () => {
@@ -3482,10 +3622,10 @@ Expected: FAIL — `Cannot find module '../src/index.ts'` exports (`default` is 
 import { type Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import {
-  type BrokerOrder, type BrokerOrderRequest, checkRisk, isTimeframe, type OrderRequest, type OrderStatus, type ProposalId,
-  type RiskLimits, TIMEFRAMES, validateOrder, type VenueStatus,
+  type BrokerOrder, type BrokerOrderRequest, checkRisk, isTimeframe, type OrderRequest, type OrderStatus, type OrderUpdate,
+  type ProposalId, type RiskLimits, TIMEFRAMES, validateOrder, type VenueStatus,
 } from '@deepseek-ai/dsh-experimental-trading'
-import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -3495,18 +3635,18 @@ import { barsReport, WARMUP_BARS } from './bars.ts'
 import { ProposalBook } from './book.ts'
 import { Config, riskLimitsOf, validateConfig } from './config.ts'
 import {
-  BLOCKED, cancelSummary, compact, failureOf, HALTED, isInsufficientBalance, KEYS_MISSING, NO_CHECKED_PROPOSAL, PRICE_MOVED,
-  proposalSummary, TRADING_BLOCKED,
+  BLOCKED, cancelSummary, compact, failureOf, fillText, HALTED, isInsufficientBalance, KEYS_MISSING, NO_CHECKED_PROPOSAL,
+  PRICE_MOVED, proposalSummary, TRADING_BLOCKED,
 } from './format.ts'
 import { clientOrderIdFor, mintProposalId, tradingDay } from './ids.ts'
 import { Journal, type JournalPatch, tradingJournalSpec } from './journal.ts'
 import { AccountLock } from './lock.ts'
 import { type ProposedCancel, type ProposedOrder, symbolOf, tickViolations } from './order-args.ts'
-import { brokerRequest, drifted, planOrder, takeSnapshot } from './snapshot.ts'
+import { brokerRequest, drifted, heldBySells, planOrder, takeSnapshot } from './snapshot.ts'
 import type {
   AccountReport, BarsReport, BarsRequest, JournalEntry, JournalRow, JournalStatus, OrderReport, OrderRow, OrdersReport,
-  PositionReport, ProposalContext, ProposeResult, QuoteReport, TradingCancelProposal, TradingOrderEvent, TradingOrderProposal,
-  TradingProposal,
+  PositionReport, ProposalContext, ProposeResult, QuoteReport, TradingCancelProposal, TradingFillEvent, TradingOrderEvent,
+  TradingOrderProposal, TradingProposal,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -3540,6 +3680,14 @@ function journalStatus(status: OrderStatus): JournalStatus {
   return status === 'open' ? 'submitted' : status
 }
 
+/** Plugin name on the fill notices an agent receives. */
+const PLUGIN_NAME = '@deepseek-ai/dsh-experimental-tool-trading'
+
+/** Journal status order: a later, lower-ranked view of an order (a stale submit result or snapshot) never moves it back. */
+const RANK: Readonly<Record<JournalStatus, number>> = {
+  proposed: 0, submitted: 1, unknown: 1, partially_filled: 2, filled: 3, canceled: 3, expired: 3, rejected: 3, denied: 3, failed: 3,
+}
+
 function orderEntry(
   proposalId: ProposalId, order: OrderRequest, rationale: string, context: ProposalContext, now: number, status: JournalStatus,
   clientOrderId: string | undefined, note: string | undefined,
@@ -3569,6 +3717,8 @@ export class TradingExecutor extends Service {
   private readonly book = new ProposalBook()
   private readonly lock = new AccountLock()
   private readonly journalReady = Promise.withResolvers<Journal>()
+  /** Serializes every journal write about a submitted order: the submit result, stream updates, and reconciliation. */
+  private readonly updates = new AccountLock()
 
   /**
    * @param ctx - plugin context.
@@ -3696,8 +3846,8 @@ export class TradingExecutor extends Service {
       if (snapshot.account.tradingBlocked) return { kind: 'denied', reasons: [TRADING_BLOCKED], journal: false }
       const risk = checkRisk(order, snapshot.risk, this.limits)
       if (!risk.ok) {
-        const reasons = risk.checks.filter(check => !check.ok).map(check => `${check.id}: ${check.detail}`)
-        return { kind: 'denied', reasons, journal: true }
+        const failed = risk.checks.filter(check => !check.ok).map(check => `${check.id}: ${check.detail}`)
+        return { kind: 'denied', reasons: [...heldBySells(order, risk.quantity, snapshot.risk.exposure), ...failed], journal: true }
       }
       const plan = planOrder(order, risk.referencePrice, this.settings.driftTolerance, risk.reduceOnly, asset.priceIncrement)
       const proposal = compact<TradingOrderProposal>({
@@ -3796,6 +3946,7 @@ export class TradingExecutor extends Service {
         })
         const recheck = checkRisk(proposal.order, snapshot.risk, this.limits)
         const failing = recheck.checks.filter(check => !check.ok).map(check => `${check.id}: ${check.detail}`)
+        if (failing.length > 0) failing.unshift(...heldBySells(proposal.order, recheck.quantity, snapshot.risk.exposure))
         if (failing.length > 0 || drifted(proposal.referencePrice, recheck.referencePrice, tolerance)) {
           throw new Error([PRICE_MOVED, ...failing].join('; '))
         }
@@ -3805,15 +3956,15 @@ export class TradingExecutor extends Service {
       })
     } catch (error) {
       const failure = failureOf(error)
-      await this.updateJournal(journal, proposal.proposalId, { status: failure.outcome, note: failure.message })
+      await this.updates.run(() => this.recordFailure(journal, proposal.proposalId, failure.outcome, failure.message))
       this.recordOrder(sessionId, { proposalId: proposal.proposalId, outcome: failure.outcome, message: failure.message })
       throw new Error(failure.message)
     }
     const { order, capped } = sent
-    await this.updateJournal(journal, proposal.proposalId, compact<JournalPatch>({
-      status: journalStatus(order.status), orderId: order.id, filledQty: order.filledQty, filledAvgPrice: order.filledAvgPrice,
-      note: undefined,
-    }))
+    // The same fold as stream updates: a fill the stream delivered before this result arrived is never overwritten.
+    await this.updates.run(() => this.foldOrder(order)).catch((error: unknown) => {
+      this.warn(`journal update for ${proposal.proposalId} failed: ${(error as Error).message}`)
+    })
     this.recordOrder(sessionId, { proposalId: proposal.proposalId, outcome: 'submitted', orderId: order.id, status: order.status })
     return orderReport(proposal.proposalId, order, order.status, capped)
   }
@@ -3847,6 +3998,61 @@ export class TradingExecutor extends Service {
         if (delay === undefined || !isInsufficientBalance(error)) throw error
         await sleep(delay)
       }
+    }
+  }
+
+  /**
+   * Fold one broker view of a desk order into the journal. The submit result, every stream update, and every
+   * reconciliation lookup go through here, serialized on `updates`: status only moves forward, the filled quantity only
+   * grows, and only its growth is reported, so each filled quantity produces exactly one `trading/fill` and one notice.
+   */
+  private async foldOrder(order: BrokerOrder, update?: OrderUpdate): Promise<void> {
+    const journal = await this.journalReady.promise
+    const entry = journal.byClientOrderId(order.clientOrderId)
+    if (entry === undefined) return
+    const observed = journalStatus(order.status)
+    const status = RANK[observed] >= RANK[entry.status] ? observed : entry.status
+    const filledQty = Math.max(order.filledQty, entry.filledQty)
+    const delta = filledQty - entry.filledQty
+    if (delta <= 0 && status === entry.status && order.id === entry.orderId) return
+    const next = await journal.update(entry.proposalId, compact<JournalPatch>({
+      status, orderId: order.id, filledQty, filledAvgPrice: order.filledAvgPrice ?? entry.filledAvgPrice, note: undefined,
+    }), Date.now())
+    if (delta > 0) await this.reportFill(next, order, delta, update)
+  }
+
+  /**
+   * Record a failed submission. When the order stream already reported the order (a fill can arrive before a failed
+   * confirmation), the stream's status stands and only the note is added.
+   */
+  private async recordFailure(journal: Journal, id: ProposalId, outcome: JournalStatus, note: string): Promise<void> {
+    const seen = journal.get(id)?.orderId !== undefined
+    await this.updateJournal(journal, id, seen ? { note } : { status: outcome, note })
+  }
+
+  /**
+   * Record a fill as `trading/fill` in the proposing session (when it is live) and queue a notice for that session's
+   * agent's next request; an idle agent is not woken. Claude Code proposals get no notice: Claude Code reads fills
+   * through tool results and `list_orders`.
+   */
+  private async reportFill(entry: JournalEntry, order: BrokerOrder, delta: number, update?: OrderUpdate): Promise<void> {
+    const fill = compact<TradingFillEvent>({
+      proposalId: entry.proposalId, orderId: order.id, ticker: order.symbol.ticker, side: order.side,
+      fillQty: update?.fillQty ?? delta, fillPrice: update?.fillPrice ?? order.filledAvgPrice, filledQty: entry.filledQty,
+      filledAvgPrice: entry.filledAvgPrice, status: order.status, t: update?.t ?? Date.now(),
+    })
+    const session = this.ctx.sessions.get(entry.sessionId)
+    if (session === undefined) return
+    session.append('trading/fill', fill)
+    await this.ctx.sessions.flush(session)
+    if (entry.source !== 'dsh-agent') return
+    try {
+      this.ctx.agents.get(entry.sessionId)?.inject(createUserMessage({
+        content: [{ type: 'text', text: fillText(fill) }],
+        source: { kind: 'plugin', plugin: PLUGIN_NAME },
+      }))
+    } catch (error) {
+      this.warn(`could not tell the agent about a fill: ${(error as Error).message}`)
     }
   }
 
@@ -3933,7 +4139,7 @@ export default TradingExecutor
 - [ ] **Step 10: Run the executor tests with coverage**
 
 Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm exec vitest run packages/experimental/tool-trading/tests/executor.spec.ts packages/experimental/tool-trading/tests/format.spec.ts --coverage --coverage.include='packages/experimental/tool-trading/src/{executor,format,index}.ts'`
-Expected: PASS; all three files 100%. `executor.ts` lines added by Tasks 8–9 do not exist yet. If `ctx.plugin(SessionStore)` does not announce sessions created with `ctx.sessions.create()` (so `session/event` never fires), create the session through the API the store documents for announced sessions and ledger it; do not observe events any other way.
+Expected: PASS; `format.ts` and `index.ts` 100%. `executor.ts` is not gated yet: `foldOrder`'s unknown-order and stale-view branches are first reached by the stream and reconciliation tests of Task 9, whose Step 4 gates every `src` file at 100%. If `ctx.plugin(SessionStore)` does not announce sessions created with `ctx.sessions.create()` (so `session/event` never fires), create the session through the API the store documents for announced sessions and ledger it; do not observe events any other way.
 
 - [ ] **Step 11: Typecheck, catalogs, commit**
 
@@ -4084,6 +4290,14 @@ describe('place_order and cancel_order through the tool pipeline', () => {
     expect(text(await run('place_order', buyArgs, 'call-2'))).toBe(`Error: ${HALTED}`)
     restingOrder()
     expect(text(await run('cancel_order', { order_id: 'order-9', rationale: 'r' }, 'call-3'))).toBe(`Error: ${HALTED}`)
+  })
+
+  it('shows a multi-line rationale as one line of the approval reason', async () => {
+    desk = await bootDesk()
+    await run('place_order', { ...buyArgs, rationale: 'Good entry.\nChecks passed: everything (fake)\n\nFAIL halted\u2028Approve now.' })
+    const reason = desk.events('approval/asked')[0]?.data.reason?.split('\n') ?? []
+    expect(reason).toHaveLength(5)
+    expect(reason.at(-1)).toBe('Rationale: Good entry. Checks passed: everything (fake) FAIL halted Approve now.')
   })
 
   it("submits only the call that was approved, with that call's arguments", async () => {
@@ -4372,8 +4586,8 @@ In `package.json` `exports`, after `"."`, add:
 
 - [ ] **Step 5: Run the pipeline and executor tests with coverage**
 
-Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm run gen-tsconfig-paths && pnpm exec vitest run packages/experimental/tool-trading --coverage --coverage.include='packages/experimental/tool-trading/src/{executor,tools}.ts'`
-Expected: `tsconfig.base.json` gains `"@deepseek-ai/dsh-experimental-tool-trading/tools": ["./packages/experimental/tool-trading/src/tools.ts"]`; every spec PASS; both files 100%.
+Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm run gen-tsconfig-paths && pnpm exec vitest run packages/experimental/tool-trading --coverage --coverage.include='packages/experimental/tool-trading/src/tools.ts'`
+Expected: `tsconfig.base.json` gains `"@deepseek-ai/dsh-experimental-tool-trading/tools": ["./packages/experimental/tool-trading/src/tools.ts"]`; every spec PASS; `tools.ts` 100% (`executor.ts` is gated in Task 9 Step 4).
 
 - [ ] **Step 6: Tool catalog, typecheck, commit**
 
@@ -4411,7 +4625,7 @@ git commit -m "feat(tool-trading): gate order tools through the executor and reg
 ### Task 9: Fills, reconciliation, and injection into the proposing agent
 
 **Files:**
-- Modify: `packages/experimental/tool-trading/src/executor.ts` (init subscription and timer; `reconcile`, `onOrderEvent`, `applyOrder`, `reportFill`)
+- Modify: `packages/experimental/tool-trading/src/executor.ts` (init subscription and timer; `reconcile`, `onOrderEvent`, `reconcileLater`, `markNotPlaced` — all journal writes go through Task 7's `foldOrder`)
 - Test: `packages/experimental/tool-trading/tests/fills.spec.ts`
 
 **Interfaces:**
@@ -4486,6 +4700,40 @@ describe('fills from the order stream', () => {
     await desk.executor.reconcile()
     expect(desk.events('trading/fill')).toHaveLength(1)
     expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_831.5 })
+  })
+
+  it('records a fill that streams in before the submission resolves exactly once', async () => {
+    desk = await bootDesk()
+    desk.venue.respond = (request) => {
+      // Alpaca's trade stream can deliver the fill before the POST that placed the order returns.
+      desk.venue.emit({ kind: 'update', update: { event: 'fill', t: 1, fillPrice: 62_831.5, fillQty: 0.0002,
+        order: acceptedOrder(request, { filledQty: 0.0002, filledAvgPrice: 62_831.5, status: 'filled' }) } })
+      return acceptedOrder(request)
+    }
+    const order = await placed()
+    await vi.waitFor(() => { expect(desk.events('trading/fill')).toHaveLength(1) })
+    await desk.executor.reconcile()
+    desk.venue.emit({ kind: 'gap', reason: 'the order-update stream reconnected' })
+    await settle()
+    expect(desk.events('trading/fill')).toHaveLength(1)
+    expect(desk.injected).toHaveLength(1)
+    expect((await desk.executor.orders()).today[0])
+      .toMatchObject({ status: 'filled', filledQty: 0.0002, filledAvgPrice: 62_831.5, orderId: order.orderId })
+  })
+
+  it('keeps a streamed fill when the submission then fails with an unknown outcome', async () => {
+    desk = await bootDesk()
+    desk.venue.respond = (request) => {
+      desk.venue.emit({ kind: 'update', update: { event: 'fill', t: 1, fillPrice: 62_831.5, fillQty: 0.0002,
+        order: acceptedOrder(request, { filledQty: 0.0002, filledAvgPrice: 62_831.5, status: 'filled' }) } })
+      throw new VenueError('Alpaca did not confirm order', 'unknown-outcome')
+    }
+    await expect(placed()).rejects.toThrow('the order outcome is unknown')
+    await desk.executor.reconcile()
+    expect(desk.events('trading/fill')).toHaveLength(1)
+    expect(desk.injected).toHaveLength(1)
+    expect((await desk.executor.orders()).today[0])
+      .toMatchObject({ status: 'filled', filledQty: 0.0002, note: expect.stringMatching(/^the order outcome is unknown/) })
   })
 
   it('records partial fills as they arrive and then the final fill', async () => {
@@ -4611,19 +4859,7 @@ Expected: FAIL — `desk.executor.reconcile is not a function` and no `trading/f
 
 - [ ] **Step 3: Implement fills and reconciliation**
 
-In `src/executor.ts`, add `brandString` (`@deepseek-ai/dsh-brand`), `createUserMessage` (`@deepseek-ai/dsh-llm`), and the types `ClientOrderId`, `OrderStreamEvent`, `OrderUpdate` to the imports; `fillText` to the `./format.ts` import; `InFlightEntry` to the `./journal.ts` import; `TradingFillEvent` to the `./types.ts` import. Add below `ORDER_TOOLS`:
-
-```ts
-/** Plugin name on the fill notices an agent receives. */
-const PLUGIN_NAME = '@deepseek-ai/dsh-experimental-tool-trading'
-
-/** Journal status order: a later, lower-ranked observation (a stale snapshot) never moves an order back. */
-const RANK: Readonly<Record<JournalStatus, number>> = {
-  proposed: 0, submitted: 1, unknown: 1, partially_filled: 2, filled: 3, canceled: 3, expired: 3, rejected: 3, denied: 3, failed: 3,
-}
-```
-
-Add a field `private readonly updates = new AccountLock()` (it serializes journal updates from the stream and from reconciliation). Replace `[Service.init]` with:
+In `src/executor.ts`, add `brandString` (`@deepseek-ai/dsh-brand`) and the types `ClientOrderId` and `OrderStreamEvent` to the imports and `InFlightEntry` to the `./journal.ts` import. Every journal write below goes through Task 7's `foldOrder` on the same `updates` lock as the submit path; there is no second fold. Replace `[Service.init]` with:
 
 ```ts
   /** Open the trading journal, follow the venue's order stream, and reconcile at startup and every `reconcileMs`. */
@@ -4657,7 +4893,7 @@ Add after `execute`:
     const open = new Map<string, BrokerOrder>((await venue.openOrders()).map(order => [order.clientOrderId, order]))
     for (const entry of inFlight) {
       const order = open.get(entry.clientOrderId) ?? await venue.order(brandString<ClientOrderId>(entry.clientOrderId))
-      await this.updates.run(() => order === undefined ? this.markNotPlaced(journal, entry) : this.applyOrder(order))
+      await this.updates.run(() => order === undefined ? this.markNotPlaced(journal, entry) : this.foldOrder(order))
     }
   }
 
@@ -4667,7 +4903,7 @@ Add after `execute`:
       return
     }
     const { update } = event
-    this.updates.run(() => this.applyOrder(update.order, update)).catch((error: unknown) => {
+    this.updates.run(() => this.foldOrder(update.order, update)).catch((error: unknown) => {
       this.warn(`could not record an order update: ${(error as Error).message}`)
     })
   }
@@ -4679,48 +4915,6 @@ Add after `execute`:
   private async markNotPlaced(journal: Journal, entry: InFlightEntry): Promise<void> {
     const note = 'the broker has no order with this id, so it was not placed'
     await journal.update(entry.proposalId, { status: 'failed', note }, Date.now())
-  }
-
-  /** Fold one broker view of a desk order into the journal; report the newly filled quantity, if any. */
-  private async applyOrder(order: BrokerOrder, update?: OrderUpdate): Promise<void> {
-    const journal = await this.journalReady.promise
-    const entry = journal.byClientOrderId(order.clientOrderId)
-    if (entry === undefined) return
-    const observed = journalStatus(order.status)
-    const status = RANK[observed] >= RANK[entry.status] ? observed : entry.status
-    const filledQty = Math.max(order.filledQty, entry.filledQty)
-    const delta = filledQty - entry.filledQty
-    if (delta <= 0 && status === entry.status && order.id === entry.orderId) return
-    const next = await journal.update(entry.proposalId, compact<JournalPatch>({
-      status, orderId: order.id, filledQty, filledAvgPrice: order.filledAvgPrice ?? entry.filledAvgPrice, note: undefined,
-    }), Date.now())
-    if (delta > 0) await this.reportFill(next, order, delta, update)
-  }
-
-  /**
-   * Record a fill as `trading/fill` in the proposing session (when it is live) and queue a notice for that session's
-   * agent's next request; an idle agent is not woken. Claude Code proposals get no notice: Claude Code reads fills
-   * through tool results and `list_orders`.
-   */
-  private async reportFill(entry: JournalEntry, order: BrokerOrder, delta: number, update?: OrderUpdate): Promise<void> {
-    const fill = compact<TradingFillEvent>({
-      proposalId: entry.proposalId, orderId: order.id, ticker: order.symbol.ticker, side: order.side,
-      fillQty: update?.fillQty ?? delta, fillPrice: update?.fillPrice ?? order.filledAvgPrice, filledQty: entry.filledQty,
-      filledAvgPrice: entry.filledAvgPrice, status: order.status, t: update?.t ?? Date.now(),
-    })
-    const session = this.ctx.sessions.get(entry.sessionId)
-    if (session === undefined) return
-    session.append('trading/fill', fill)
-    await this.ctx.sessions.flush(session)
-    if (entry.source !== 'dsh-agent') return
-    try {
-      this.ctx.agents.get(entry.sessionId)?.inject(createUserMessage({
-        content: [{ type: 'text', text: fillText(fill) }],
-        source: { kind: 'plugin', plugin: PLUGIN_NAME },
-      }))
-    } catch (error) {
-      this.warn(`could not tell the agent about a fill: ${(error as Error).message}`)
-    }
   }
 ```
 
@@ -4951,7 +5145,235 @@ git commit -m "test(tool-trading): boot the executor and tools through the Loade
 
 ---
 
-### Task 11: `bundle-trading` — the trading profile patch and the `trader` preset
+### Task 11: The user's `/trading` command — status, halt, resume
+
+**Files:**
+- Create: `packages/experimental/tool-trading/src/command.ts`
+- Modify: `packages/experimental/tool-trading/package.json` (`./command` export; `@deepseek-ai/dsh-commands` in `peerDependencies` and `devDependencies`), `packages/experimental/tool-trading/tsconfig.json` (reference `../../interaction/commands`), `tsconfig.base.json` (regenerated)
+- Test: `packages/experimental/tool-trading/tests/command.spec.ts`
+
+**Interfaces:**
+- Consumes: the command registry at `ctx.commands` (`@deepseek-ai/dsh-commands`, mounted by `@deepseek-ai/dsh-base` as row `commands` — `packages/bundle/base/cordis.patch.yml:286`): `register(definition: CommandDefinition): () => void` with `{ definitionId, name, description, handler(invocation: CommandInvocation): Promise<CommandResult> }` and `execute(agent, line, attachments, signal): Promise<CommandExecution | undefined>` (`packages/interaction/commands/src/index.ts:61-75,285,365`; `CommandResult` = `{ kind: 'success'; text? } | { kind: 'error'; text }` in `src/types.ts:34`). Precedent: `/compact` in `packages/compaction/command-compact/src/index.ts` (registered with `CommandDefinitionId` from `@deepseek-ai/dsh-commands/brand`, mounted per preset in `packages/preset/agent-presets/presets/standard/agent.cordis.yml:148`). A command line is executed by the registry and logged as `command/run` / `command/done`; it is never sent to the model. Venue: `status()`, `mode()`, `statusReason()` (Task 1), `halt(reason)`, `resume()` (which re-applies the account safety settings and lifts Alpaca's `suspend_trade` — `packages/experimental/trading-alpaca/src/venue.ts` `resume()` → `AccountSafety.resume`).
+- Produces: `@deepseek-ai/dsh-experimental-tool-trading/command` (function plugin: `name = 'command-trading'`, `inject = ['commands', 'tradingVenue']`, `apply`, plus `statusLine(venue): string`); the user command `/trading [status | halt [reason] | resume]`. The `trader` preset mounts it in Task 12; it adds no tool.
+
+- [ ] **Step 1: Write the failing command tests**
+
+`packages/experimental/tool-trading/tests/command.spec.ts`:
+
+```ts
+import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
+import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
+import { afterEach, describe, expect, it } from 'vitest'
+import * as TradingCommand from '../src/command.ts'
+import { bootDesk, type Desk } from './harness.ts'
+
+const USAGE = 'Usage: /trading [status | halt [reason] | resume]'
+let desk: Desk
+afterEach(async () => { await desk.close() })
+
+async function withCommand(): Promise<Desk> {
+  desk = await bootDesk()
+  await desk.ctx.plugin(CommandRuntime)
+  await desk.ctx.plugin(TradingCommand)
+  return desk
+}
+
+async function command(line: string): Promise<CommandResult | undefined> {
+  return (await desk.ctx.commands.execute(desk.agent, line, [], new AbortController().signal))?.result
+}
+
+describe('/trading', () => {
+  it('shows the derived status, the account mode, and the reason behind the status', async () => {
+    await withCommand()
+    expect(await command('/trading')).toEqual({ kind: 'success', text: 'Trading status: ready (paper).' })
+    expect(await command('/trading status')).toEqual({ kind: 'success', text: 'Trading status: ready (paper).' })
+    desk.venue.current = 'halted'
+    desk.venue.haltReason = 'account setting no_shorting changed'
+    desk.venue.accountMode = 'live'
+    expect(await command('/trading status'))
+      .toEqual({ kind: 'success', text: 'Trading status: halted (live). Reason: account setting no_shorting changed.' })
+  })
+
+  it('halts through the venue with the given reason or a default one', async () => {
+    await withCommand()
+    expect(await command('/trading halt market looks wrong'))
+      .toEqual({ kind: 'success', text: 'Trading halted. Trading status: halted (paper). Reason: market looks wrong.' })
+    expect(desk.venue.haltReason).toBe('market looks wrong')
+    expect(await command('/trading halt'))
+      .toEqual({ kind: 'success', text: 'Trading halted. Trading status: halted (paper). Reason: halted by the user.' })
+    desk.venue.haltFailure = new Error('disk full')
+    expect(await command('/trading halt again')).toEqual({ kind: 'error',
+      text: 'The Halt is in effect but could not be saved: disk full. Trading status: halted (paper). Reason: again.' })
+  })
+
+  it('resumes only through venue.resume(), which restores the broker suspension state', async () => {
+    await withCommand()
+    desk.venue.current = 'halted'
+    desk.venue.haltReason = 'user halt'
+    expect(await command('/trading resume')).toEqual({ kind: 'success', text: 'Trading resumed. Trading status: ready (paper).' })
+    expect(desk.venue.resumeCalls).toBe(1)
+    desk.venue.current = 'halted'
+    desk.venue.resumeLeavesHalted = true
+    expect(await command('/trading resume')).toEqual({ kind: 'error',
+      text: 'A Halt arrived while resuming; trading stays halted. Trading status: halted (paper). Reason: user halt.' })
+    desk.venue.resumeFailure = new VenueError('the account cannot be made safe', 'blocked')
+    expect(await command('/trading resume')).toEqual({ kind: 'error',
+      text: 'Could not resume trading: the account cannot be made safe. Trading status: halted (paper). Reason: user halt.' })
+    expect(desk.venue.resumeCalls).toBe(3)
+  })
+
+  it('refuses any other input', async () => {
+    await withCommand()
+    for (const line of ['/trading buy', '/trading status now', '/trading resume please']) {
+      expect(await command(line)).toEqual({ kind: 'error', text: USAGE })
+    }
+    expect(desk.venue.resumeCalls).toBe(0)
+  })
+
+  it('gives the model no halt, resume, or status capability, and keeps command output out of the model history', async () => {
+    await withCommand()
+    await command('/trading halt test')
+    await command('/trading resume')
+    const schemas = desk.ctx.tools.schemas()
+    expect(schemas.map(schema => schema.name).sort()).toEqual([
+      'cancel_order', 'get_account', 'get_bars', 'get_positions', 'get_quote', 'list_orders', 'place_order',
+    ])
+    expect(schemas.some(schema => /halt|resume/i.test(schema.name) || /resume/i.test(schema.description))).toBe(false)
+    expect(JSON.stringify(desk.session.deriveMessages())).not.toContain('Trading status')
+  })
+
+  it('removes /trading when its plugin is disposed', async () => {
+    desk = await bootDesk()
+    await desk.ctx.plugin(CommandRuntime)
+    const plugin = await desk.ctx.plugin(TradingCommand)
+    expect(desk.ctx.commands.find(desk.agent, 'trading')).toBeDefined()
+    await plugin.dispose()
+    expect(desk.ctx.commands.find(desk.agent, 'trading')).toBeUndefined()
+    expect(await command('/trading status')).toBeUndefined()
+  })
+})
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm exec vitest run packages/experimental/tool-trading/tests/command.spec.ts`
+Expected: FAIL — `Cannot find module '../src/command.ts'`.
+
+- [ ] **Step 3: Write `src/command.ts`**
+
+```ts
+/**
+ * The user's `/trading` command: show the venue status, halt trading, or resume it. A command line runs in the command
+ * registry and is never sent to the model, so the agent still has no way to resume a halted desk. Resume goes through
+ * the venue, which re-applies the account safety settings and lifts the broker suspension.
+ *
+ * @module @deepseek-ai/dsh-experimental-tool-trading/command
+ */
+import type { Context } from '@deepseek-ai/cordis'
+import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
+import type { TradingVenueGateway } from '@deepseek-ai/dsh-experimental-trading-venue'
+
+/** Plugin name. */
+export const name = 'command-trading'
+/** The command registry and the venue it controls. */
+export const inject = ['commands', 'tradingVenue']
+
+const USAGE = 'Usage: /trading [status | halt [reason] | resume]'
+const DEFAULT_REASON = 'halted by the user'
+
+/**
+ * @param venue - the trading venue.
+ * @returns one line with the derived status, the account mode, and the reason behind the status when there is one.
+ */
+export function statusLine(venue: TradingVenueGateway): string {
+  const reason = venue.statusReason()
+  return `Trading status: ${venue.status()} (${venue.mode()}).${reason === '' ? '' : ` Reason: ${reason}.`}`
+}
+
+async function halt(venue: TradingVenueGateway, reason: string): Promise<CommandResult> {
+  try {
+    await venue.halt(reason)
+  } catch (error) {
+    // The venue halts in memory before saving, so the Halt holds for this process even when the save failed.
+    return { kind: 'error', text: `The Halt is in effect but could not be saved: ${(error as Error).message}. ${statusLine(venue)}` }
+  }
+  return { kind: 'success', text: `Trading halted. ${statusLine(venue)}` }
+}
+
+async function resume(venue: TradingVenueGateway): Promise<CommandResult> {
+  try {
+    await venue.resume()
+  } catch (error) {
+    return { kind: 'error', text: `Could not resume trading: ${(error as Error).message}. ${statusLine(venue)}` }
+  }
+  if (venue.status() === 'halted') {
+    return { kind: 'error', text: `A Halt arrived while resuming; trading stays halted. ${statusLine(venue)}` }
+  }
+  return { kind: 'success', text: `Trading resumed. ${statusLine(venue)}` }
+}
+
+function run(venue: TradingVenueGateway, rawInput: string): Promise<CommandResult> | CommandResult {
+  const input = rawInput.trim()
+  const space = input.search(/\s/)
+  const verb = space === -1 ? input : input.slice(0, space)
+  const rest = space === -1 ? '' : input.slice(space).trim()
+  switch (verb) {
+    case '':
+    case 'status':
+      return rest === '' ? { kind: 'success', text: statusLine(venue) } : { kind: 'error', text: USAGE }
+    case 'halt':
+      return halt(venue, rest === '' ? DEFAULT_REASON : rest)
+    case 'resume':
+      return rest === '' ? resume(venue) : { kind: 'error', text: USAGE }
+    default:
+      return { kind: 'error', text: USAGE }
+  }
+}
+
+/**
+ * Register `/trading`.
+ * @param ctx - context carrying the command registry and the trading venue.
+ */
+export function apply(ctx: Context): void {
+  ctx.commands.register({
+    definitionId: CommandDefinitionId('@deepseek-ai/dsh-experimental-tool-trading/command'),
+    name: 'trading',
+    description: 'Show trading status, or halt or resume trading',
+    handler: async (invocation: CommandInvocation) => run(ctx.tradingVenue, invocation.rawInput),
+  })
+}
+```
+
+In `package.json` `exports`, after `"./tools"`, add:
+
+```json
+    "./command": {
+      "types": "./lib/types/command.d.ts",
+      "default": "./lib/types/command.js"
+    },
+```
+
+and add `"@deepseek-ai/dsh-commands": "workspace:^"` to `peerDependencies` and `devDependencies`. In `tsconfig.json` `references`, add `{ "path": "../../interaction/commands" }`.
+
+- [ ] **Step 4: Run with coverage**
+
+Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm install && pnpm run gen-tsconfig-paths && pnpm exec vitest run packages/experimental/tool-trading --coverage --coverage.include='packages/experimental/tool-trading/src/**'`
+Expected: `tsconfig.base.json` gains `"@deepseek-ai/dsh-experimental-tool-trading/command": ["./packages/experimental/tool-trading/src/command.ts"]`; every spec PASS; every `src` file 100%.
+
+- [ ] **Step 5: Typecheck and commit**
+
+Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && pnpm exec tsc -b packages/experimental/tool-trading && pnpm run lint`
+Expected: exit 0.
+
+```bash
+git add packages/experimental/tool-trading tsconfig.base.json pnpm-lock.yaml
+git commit -m "feat(tool-trading): add the user's /trading command for status, halt, and resume"
+```
+
+---
+
+### Task 12: `bundle-trading` — the trading profile patch and the `trader` preset
 
 **Files:**
 - Create: `packages/experimental/bundle-trading/package.json`, `tsconfig.json`, `cordis.patch.yml`, `src/index.ts`
@@ -4960,7 +5382,7 @@ git commit -m "test(tool-trading): boot the executor and tools through the Loade
 - Modify: `tsconfig.host.json`, `tsconfig.base.json` (regenerated), `pnpm-lock.yaml`
 
 **Interfaces:**
-- Consumes: row ids of `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` (`mcp-resources` — `packages/bundle/base/cordis.patch.yml:471`; `cordis-host-runner`, `cordis-client-runner`, `ui-cordis`, `agent-presets` — `packages/bundle/web-app/cordis.patch.yml:121,198,274,522`); `AgentPresets.Config` (`default`, `roots[].path|trust`, `includeShippedRoot`, `includeUserRoot` — `packages/preset/agent-presets/src/index.ts:108-116`); tool-trading's `./tools` and Config (Tasks 2, 8).
+- Consumes: row ids of `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` (`mcp-resources` — `packages/bundle/base/cordis.patch.yml:471`; `cordis-host-runner`, `cordis-client-runner`, `ui-cordis`, `agent-presets` — `packages/bundle/web-app/cordis.patch.yml:121,198,274,522`); tool-trading's `./tools` and `./command` subpaths (Tasks 8, 11); the compaction group of the shipped `standard` preset (`packages/preset/agent-presets/presets/standard/agent.cordis.yml`, group `compaction`), copied unchanged; `AgentPresets.Config` (`default`, `roots[].path|trust`, `includeShippedRoot`, `includeUserRoot` — `packages/preset/agent-presets/src/index.ts:108-116`); tool-trading's `./tools` and Config (Tasks 2, 8).
 - Produces: npm package `@deepseek-ai/dsh-experimental-bundle-trading` with `dsh.bundle.patch`; preset id `trader`.
 
 - [ ] **Step 1: Write the failing profile test**
@@ -5034,12 +5456,25 @@ describe('trading profile bundle', () => {
     })
   })
 
-  it('composes the trader agent from its persona, the trading tools, and web search and fetch only', () => {
-    expect(rows(join(root, 'presets/trader/agent.cordis.yml')).map(row => [row.id, row.name, row.config])).toEqual([
-      ['persona', '@deepseek-ai/dsh-persona', expect.objectContaining({ prefix: expect.stringMatching(/^You are a trading assistant/) })],
-      ['tool-trading', '@deepseek-ai/dsh-experimental-tool-trading/tools', undefined],
-      ['tool-web', '@deepseek-ai/dsh-tool-web', { fetch: true, searchTimeoutMs: 60000 }],
+  it('composes the trader agent from its persona, the trading tools and command, compaction, and web search and fetch', () => {
+    const preset = rows(join(root, 'presets/trader/agent.cordis.yml'))
+    expect(preset.map(row => [row.id, row.name])).toEqual([
+      ['persona', '@deepseek-ai/dsh-persona'],
+      ['tool-trading', '@deepseek-ai/dsh-experimental-tool-trading/tools'],
+      ['command-trading', '@deepseek-ai/dsh-experimental-tool-trading/command'],
+      ['compaction', 'cordis:group'],
+      ['tool-web', '@deepseek-ai/dsh-tool-web'],
     ])
+    expect(preset[0]?.config).toEqual({ prefix: expect.stringMatching(/^You are a trading assistant/) })
+    expect(preset[4]?.config).toEqual({ fetch: true, searchTimeoutMs: 60000 })
+    // The compaction rows are the shipped standard preset's group verbatim; they add the /compact command, no tools.
+    const compaction = preset[3]?.config as unknown as readonly Row[]
+    expect(compaction.map(row => [row.id, row.name])).toEqual([
+      ['compaction-basic', '@deepseek-ai/dsh-compaction-basic'],
+      ['command-compact', '@deepseek-ai/dsh-command-compact'],
+      ['tool-result-pruner', '@deepseek-ai/dsh-compaction-tool-result-pruner'],
+    ])
+    expect(compaction[2]?.config).toEqual({ thresholdChars: 8192, headChars: 4096, tailChars: 1024 })
     expect(yaml.load(readFileSync(join(root, 'presets/trader/preset.yml'), 'utf8'))).toEqual({
       name: 'Trader', description: 'Analyzes US stocks and crypto and proposes orders that you approve one at a time.', order: 1,
     })
@@ -5224,7 +5659,7 @@ export {}
 # get_positions, list_orders, place_order, cancel_order, web_search, and web_fetch.
 # There is no shell, terminal, file, code, workflow, delegation, MCP, or extension
 # tool, so the trading tools and their approval requests are the agent's only way to
-# reach the broker.
+# reach the broker. Halt and resume are the user's /trading command, never a tool.
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
@@ -5239,6 +5674,33 @@ export {}
 
 - id: tool-trading
   name: '@deepseek-ai/dsh-experimental-tool-trading/tools'
+
+# The user's /trading command (status, halt, resume). Commands never reach the model.
+- id: command-trading
+  name: '@deepseek-ai/dsh-experimental-tool-trading/command'
+
+# Context compaction, as in the shipped `standard` preset: long analysis sessions need it, and it adds no
+# model-facing tool (only the user's /compact command). `compaction-basic` reads `toolResultPrune` through
+# `ctx.get`, so the pruner shares this realm.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
 
 # The `web` service and its search provider stay in the host composition; only the
 # model-facing tool is per-agent. web_fetch exposes no headers or method.
@@ -5273,7 +5735,7 @@ git commit -m "feat(bundle-trading): add the trading profile layer and the trade
 
 ---
 
-### Task 12: Keyless recorded-session snapshot through the trading profile
+### Task 13: Keyless recorded-session snapshot through the trading profile
 
 **Files:**
 - Create: `apps/web/tests/trading-fake-broker.ts`, `apps/web/tests/trading-desk.snapshot.ts`
@@ -5432,6 +5894,7 @@ import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { assertFixtureInventory, launchWebScaffold, recordFixture, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { type FakeBroker, startFakeBroker } from './trading-fake-broker.ts'
@@ -5487,6 +5950,7 @@ async function closeDesk(desk: Desk | undefined): Promise<void> {
 describe('trading profile: trader agent trades on a fake broker', () => {
   let desk: Desk
   let handle: AgentHandle
+  let statusResult: unknown
 
   beforeAll(async () => {
     desk = await launchDesk({ replay: true })
@@ -5508,6 +5972,8 @@ describe('trading profile: trader agent trades on a fake broker', () => {
     }, { timeout: 15_000 })
     handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: FOLLOW_UP }], source: { kind: 'user' } }))
     await handle.agent.whenIdle()
+    // Inside the recorded session, so its log-only command/run and command/done events are part of the fixture.
+    statusResult = (await scaffold.ctx.commands.execute(handle.agent, '/trading status', [], new AbortController().signal))?.result
     if (MODE === 'record') await recordFixture(scaffold, handle.agent.session.id, FIXTURE)
   }, 240_000)
 
@@ -5522,6 +5988,16 @@ describe('trading profile: trader agent trades on a fake broker', () => {
     const header = handle.agent.session.requestHeader()
     expect(header?.tools?.map(tool => tool.name).toSorted()).toEqual(ALLOWLIST)
     expect(desk.scaffold.ctx.tools.schemas(handle.agent).map(tool => tool.name).toSorted()).toEqual(ALLOWLIST)
+    // Compaction and the two user commands are composed, and none of them adds a model-facing tool:
+    // ALLOWLIST and tool-schemas.expected.json list the same nine tools as before they were added.
+    expect(desk.scaffold.ctx.agentPresets.serviceFor(handle.agent, 'compaction')).toBeDefined()
+    expect(desk.scaffold.ctx.commands.find(handle.agent, 'trading')).toBeDefined()
+    expect(desk.scaffold.ctx.commands.find(handle.agent, 'compact')).toBeDefined()
+  })
+
+  it('answers /trading status for the user without telling the model', () => {
+    expect(statusResult).toEqual({ kind: 'success', text: 'Trading status: ready (paper).' })
+    expect(JSON.stringify(handle.agent.session.deriveMessages())).not.toContain('Trading status')
   })
 
   it('asks with the proposal, submits the order to the broker, and tells the agent about the fill', () => {
@@ -5583,7 +6059,7 @@ Expected: record writes `session.v3.jsonl`; refresh writes `system-prompt.expect
 - [ ] **Step 4: Replay keylessly**
 
 Run: `export PATH=~/.nvm/versions/node/v24.21.0/bin:$PATH && env -u DEEPSEEK_API_KEY DSH_EXAMPLE_MODE=lib pnpm exec vitest run --config vitest.snapshot.config.ts apps/web/tests/trading-desk.snapshot.ts scripts/session-snapshot-corpus.corpus.ts`
-Expected: all pass with no key. Review the fixture diff: `trading/proposal`, `approval/asked` (reason starting `PAPER Buy 0.0002 BTC/USD limit at $62,000.00 gtc`), `approval/decided` `allowed-once`, `trading/order` `submitted`, `trading/fill`, then the injected fill notice and the follow-up answer; `tool-schemas.expected.json` lists exactly the nine allowlisted tools.
+Expected: all pass with no key. `tool-schemas.expected.json` is the allowlist snapshot and must equal what it was before compaction and `/trading` joined the preset: the same nine tools, unchanged schemas. Review the fixture diff: `trading/proposal`, `approval/asked` (reason starting `PAPER Buy 0.0002 BTC/USD limit at $62,000.00 gtc`), `approval/decided` `allowed-once`, `trading/order` `submitted`, `trading/fill`, then the injected fill notice and the follow-up answer; `tool-schemas.expected.json` lists exactly the nine allowlisted tools.
 
 - [ ] **Step 5: Commit**
 
@@ -5593,7 +6069,7 @@ git commit -m "test(bundle-trading): record a keyless trading-desk session throu
 ```
 
 ---
-### Task 13: Documentation, catalogs, the spec note, and repository gates
+### Task 14: Documentation, catalogs, the spec note, and repository gates
 
 **Files:**
 - Create: `packages/experimental/tool-trading/README.md`, `packages/experimental/bundle-trading/README.md` (English only)
@@ -5654,7 +6130,13 @@ Use it through [`bundle-trading`](../bundle-trading/README.md), which mounts the
 # agent preset
 - id: tool-trading
   name: '@deepseek-ai/dsh-experimental-tool-trading/tools'
+- id: command-trading
+  name: '@deepseek-ai/dsh-experimental-tool-trading/command'
 ```
+
+### The `/trading` command
+
+`/trading` (or `/trading status`) shows the venue's derived status, the account mode, and the reason behind the status; `/trading halt [reason]` halts through `ctx.tradingVenue.halt()` (default reason `halted by the user`); `/trading resume` goes through `ctx.tradingVenue.resume()`, which re-applies the account safety settings and lifts the broker suspension, and reports when a Halt that arrived meanwhile wins. The command is the user's: it runs in the command registry, is logged as `command/run` / `command/done`, and never reaches the model.
 
 The executor injects `tradingVenue`, `tools`, `storageDomain`, `sessions`, and `agents`, and reads `approval` when it is composed.
 
@@ -5704,7 +6186,7 @@ A negative, non-finite, or out-of-range value fails the plugin at load with a `R
 
 ### Journal and fills
 
-The journal is the storage domain `trading_journal` (table `entries`, one record per proposal). Order-stream updates, every gap, startup, and a `reconcileMs` timer fold the broker's view into it; status never moves backwards, and each newly filled quantity is reported once as `trading/fill` and as a notice injected into the proposing session's agent (`dsh-agent` proposals only). An in-flight order the broker has no record of is marked not placed; nothing is resubmitted.
+The journal is the storage domain `trading_journal` (table `entries`, one record per proposal). The submit result, order-stream updates, every gap, startup, and a `reconcileMs` timer all go through one fold, serialized on one lock; status never moves backwards (a fill that streams in before the submission returns is not overwritten by the stale submit result), and each growth of the cumulative filled quantity is reported once as `trading/fill` and as a notice injected into the proposing session's agent (`dsh-agent` proposals only). An in-flight order the broker has no record of is marked not placed; nothing is resubmitted.
 
 ### Source map
 
@@ -5712,6 +6194,7 @@ The journal is the storage domain `trading_journal` (table `entries`, one record
 |---|---|
 | `src/executor.ts` | The service: proposals, pipeline wiring, execution, fills, reconciliation |
 | `src/tools.ts` | The seven tool definitions (`./tools` plugin) |
+| `src/command.ts` | The user's `/trading` command (`./command` plugin) |
 | `src/book.ts` | Reservations, proposal states, call and approval links |
 | `src/journal.ts` | The `trading_journal` domain |
 | `src/snapshot.ts` | One risk snapshot; order planning and the broker request |
@@ -5772,7 +6255,7 @@ Appended after the existing history; no prefix change.
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-- **No resume, flatten, or close tool** — Halt, resume, Close, and Cancel all & flatten are user actions in the Trading panel (Plan 4); the agent cannot resume trading.
+- **Close and Cancel all & flatten** — user actions in the Trading panel (Plan 4). Halt, resume, and status are the user's `/trading` command today; no tool lets the agent halt or resume.
 - **Approval card** — until the Trading panel's composer card exists, approval uses the generic approval panel, which shows the proposal summary as its headline.
 - **Daily order count** — counts orders placed through this desk; orders placed elsewhere with the same keys are not counted.
 - **MCP approvals** — the trading-owned approval queue for Claude Code over MCP (events `trading/approval-asked` / `trading/approval-decided`) arrives with `trading-mcp`; until then only in-app approvals release a proposal.
@@ -5796,7 +6279,7 @@ Use `packages/experimental/agent-team-profile/README.md` for the skeleton (`kind
 - **Summary:** the trading profile layer over `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app` and the `trader` preset; paper by default; no shipped profile enables it.
 - **Install into a profile:** `dsh --profile trading --from-default-profile web`, then `dsh plugin --profile trading add @deepseek-ai/dsh-experimental-bundle-trading`, then put `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` (paper keys) into `$DSH_HOME/.credentials.yaml` (the Trading settings card arrives with the Trading panel), then start `dsh --profile trading`.
 - **What the layer changes:** a table of every row the patch touches — `mcp-resources`, `cordis-host-runner`, `cordis-client-runner`, `ui-cordis` disabled; `agent-presets` with `default: trader`, `includeShippedRoot: false`, `includeUserRoot: false`, and the package's `presets` directory as the only (system) root; `trading-alpaca` (`mode: paper`) and `trading-executor` inserted with the spec's limits. `terminal-controller` and `ui-sidebar-terminal` stay.
-- **The trader preset:** its three rows and the exact nine tools; no shell, file, code, workflow, delegation, MCP, or extension tool.
+- **The trader preset:** its rows (persona, the trading tools, the `/trading` command, the `standard` preset's compaction group, `tool-web`) and the exact nine tools; compaction and the commands add none; no shell, file, code, workflow, delegation, MCP, or extension tool. The user halts, resumes, and checks status with `/trading`.
 - **Model Experience:** the persona prefix verbatim (from `presets/trader/agent.cordis.yml`), its token effect (fixed, about 120 tokens), and KV-cache effect (stable per model; `{{model}}` interpolation changes it only when the model changes).
 - **Known Limitations:** a saved `agent-presets.default` from another profile (settings are shared under `$DSH_HOME`) makes new sessions fail with `agent-presets: preset "<id>" not found (available: trader)` until the user picks Trader or turns off mode selection; an external shell-capable agent (Claude Code in the Terminal tab) can still read the keys — see the spec's Execution boundary; the Trading panel, gateway, and market-data stream arrive with Plan 4 and the MCP endpoint with Plan 5.
 - **Dev Note:** the preset root is resolved with `createRequire(baseUrl)` from the profile directory, where `dsh plugin add` (and the web test scaffold's install anchors) place the package.
@@ -5876,7 +6359,7 @@ git commit -m "docs(tool-trading): document the executor, the trading tools, and
 
 ---
 
-### Task 14: Opt-in executor paper e2e, the manual desk run, and the roadmap
+### Task 15: Opt-in executor paper e2e, the manual desk run, and the roadmap
 
 **Files:**
 - Create: `packages/experimental/tool-trading/tests/executor-paper.e2e.ts`
@@ -6020,7 +6503,7 @@ git commit -m "docs(plans): mark the trading executor, tools, and profile plan d
 
 ## Deferred to later plans
 
-- **Plan 4:** Trading panel, composer approval card (reads `trading/proposal` by `callId`), tool views (`tool.call.toolview`), Trading settings card (limits, keys, Halt/resume, Close, Cancel all & flatten), `trading-gateway`, market-data WebSocket, LIVE badge, Today's trades tab (journal entries carry `sessionId` and `callId` for the message link), re-running venue setup when keys are added later (Plan 2 ledger Task 9).
+- **Plan 4:** Trading panel, composer approval card (reads `trading/proposal` by `callId`), tool views (`tool.call.toolview`), Trading settings card (limits, keys, Halt/resume buttons beside the `/trading` command, Close, Cancel all & flatten), `trading-gateway`, market-data WebSocket, LIVE badge, Today's trades tab (journal entries carry `sessionId` and `callId` for the message link), re-running venue setup when keys are added later (Plan 2 ledger Task 9).
 - **Plan 5:** `trading-mcp` and its trading-owned approval queue: new `trading/approval-asked` / `trading/approval-decided` events that the executor's `observe` folds the same way it folds `approval/asked` / `approval/decided` today; per-session tokens; SSE progress; the Pending approvals strip. The executor API it calls already exists: `proposeOrder`/`proposeCancel` with `source: 'claude-code-mcp'` and no `callId` (identical pending MCP proposals return `kind: 'duplicate'`), `execute(proposalId, sessionId)`, the read methods, and `reconcile()`.
 
 ## Spec coverage (self-review)
@@ -6040,8 +6523,12 @@ git commit -m "docs(plans): mark the trading executor, tools, and profile plan d
 | Fills as `trading/fill` and injected into the proposing session's agent; re-read on gaps and a timer | 9 |
 | Keys missing message | 7 |
 | Executor service usable by `trading-mcp` (source attribution, de-duplication hook) | 7 |
-| Profile: `mcp-resources` and cordis runners disabled, terminal kept, preset roots closed, `default: trader`, unknown saved default fails loudly | 11, 12 |
-| `trader` tool allowlist pinned by `tool-schemas.expected.json` | 12 |
-| Keyless recorded-session snapshot with a fake broker | 12 |
+| Profile: `mcp-resources` and cordis runners disabled, terminal kept, preset roots closed, `default: trader`, unknown saved default fails loudly | 12, 13 |
+| `trader` tool allowlist pinned by `tool-schemas.expected.json` (unchanged by compaction and `/trading`) | 12, 13 |
+| Keyless recorded-session snapshot with a fake broker | 13 |
+| Halt persists until the user resumes; no tool lets the agent resume; user status, halt, and resume via `/trading` | 1, 8, 11 |
+| Each fill reported once, even when it beats the submit result | 7, 9 |
+| Rationale shown as one line on the approval request | 3, 8 |
+| Reduce-only exit blocked by resting sells says so | 6, 7 |
 | Real composition, HMR disposal, per-file 100% coverage | 10, every task |
-| End to end on paper | 14 |
+| End to end on paper | 15 |
