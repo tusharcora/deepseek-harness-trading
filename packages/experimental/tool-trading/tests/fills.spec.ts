@@ -182,14 +182,46 @@ describe('fills from the order stream', () => {
     await vi.waitFor(() => { expect(desk.events('trading/fill')).toHaveLength(1) }, { timeout: 3_000 })
   })
 
-  it('marks an order the broker never received as not placed instead of resubmitting it', async () => {
+  it('marks an order the broker never received as not placed after two reconciliation intervals, without resubmitting', async () => {
     desk = await bootDesk()
     desk.venue.respond = () => { throw new VenueError('Alpaca did not confirm order', 'unknown-outcome') }
     await expect(placed()).rejects.toThrow('the order outcome is unknown')
+    // TEST_CONFIG reconcileMs is one hour: the grace window is two hours after the entry last changed.
+    const now = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(now + 7_200_000 - 1_000)
     await desk.executor.reconcile()
+    vi.mocked(Date.now).mockReturnValue(now + 7_200_000 + 1_000)
+    await desk.executor.reconcile()
+    vi.mocked(Date.now).mockRestore()
     expect((await desk.executor.orders()).today[0])
       .toMatchObject({ status: 'failed', note: 'the broker has no order with this id, so it was not placed' })
     expect(desk.venue.submitted).toHaveLength(1)
+  })
+
+  it('keeps an order of unknown outcome in flight while the broker may still be processing it', async () => {
+    desk = await bootDesk()
+    let request: BrokerOrderRequest | undefined
+    desk.venue.respond = (sent) => {
+      request = sent
+      throw new VenueError('Alpaca did not confirm order', 'unknown-outcome')
+    }
+    await expect(placed()).rejects.toThrow('the order outcome is unknown')
+    if (request === undefined) throw new Error('nothing was submitted')
+    await desk.executor.reconcile()
+    const [row] = (await desk.executor.orders()).today
+    expect(row?.status).toBe('unknown')
+    expect(row?.note).toMatch(/^the order outcome is unknown/)
+    // The broker executes the timed-out submission after all; the stream and a later lookup report it.
+    const executed = acceptedOrder(request, { filledQty: 0.0002, filledAvgPrice: 62_831.5, status: 'filled' })
+    desk.venue.emit({ kind: 'update', update: { event: 'fill', order: executed, t: 3, fillQty: 0.0002, fillPrice: 62_831.5 } })
+    desk.venue.known.set(request.clientOrderId, executed)
+    await vi.waitFor(() => { expect(desk.events('trading/fill')).toHaveLength(1) })
+    desk.venue.emit({ kind: 'gap', reason: 'the order-update stream reconnected' })
+    await desk.executor.reconcile()
+    await settle()
+    expect(desk.events('trading/fill')).toHaveLength(1)
+    expect(desk.injected).toHaveLength(1)
+    expect((await desk.executor.orders()).today[0]).toMatchObject({ status: 'filled', filledQty: 0.0002 })
   })
 
   it('never marks an order the broker already reported as not placed', async () => {

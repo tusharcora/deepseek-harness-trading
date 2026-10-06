@@ -415,8 +415,9 @@ export class TradingExecutor extends Service {
   /**
    * Re-read the broker's open orders and look up every journaled order still in flight, recording fills the stream did
    * not deliver. Runs at startup, on every order-stream gap, and every `reconcileMs`, because a socket that hangs
-   * without closing reports no gap. An order the broker has no record of, and never reported, is marked not placed;
-   * nothing is resubmitted.
+   * without closing reports no gap. An order the broker has no record of, never reported, and whose entry has not changed
+   * for two reconciliation intervals is marked not placed (a timed-out submission may still be processing at the broker
+   * until then); nothing is resubmitted.
    * @returns when every in-flight order was checked.
    */
   async reconcile(): Promise<void> {
@@ -454,10 +455,12 @@ export class TradingExecutor extends Service {
 
   /**
    * Mark an in-flight order the broker has no record of as not placed. An order the broker reported before (the entry
-   * has a broker order id) is left as it is.
+   * has a broker order id), or whose entry changed within the last two `reconcileMs`, stays in flight: until then the
+   * broker may still be processing a submission whose outcome was unknown.
    */
   private async markNotPlaced(journal: Journal, entry: InFlightEntry): Promise<void> {
     if (journal.get(entry.proposalId)?.orderId !== undefined) return
+    if (Date.now() - entry.updatedAt <= 2 * this.settings.reconcileMs) return
     await journal.update(entry.proposalId, { status: 'failed', note: NOT_PLACED }, Date.now())
   }
 
