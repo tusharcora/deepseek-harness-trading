@@ -221,6 +221,19 @@ describe('read tools', () => {
       .toBe('Error: symbol "NOT A SYMBOL" is not a US stock ticker or a supported crypto pair such as BTC/USD')
   })
 
+  it('cuts a get_bars limit above the cap to the cap', async () => {
+    desk = await bootDesk()
+    const hour = 3_600_000
+    desk.venue.history = Array.from({ length: 700 }, (_, index) => ({
+      t: Date.UTC(2026, 8, 1) + index * hour, o: 100, h: 101, l: 99, c: 100 + index / 100, v: 10,
+    }))
+    const rendered = text(await run('get_bars', { symbol: 'BTC/USD', timeframe: '1h', limit: 900 }))
+    expect(rendered).toContain('BTC/USD 1h: 500 bars, oldest first.')
+    const lines = rendered.split('\n')
+    expect(lines.slice(lines.indexOf('time,open,high,low,close,volume') + 1)).toHaveLength(500)
+    expect(desk.venue.barQueries.map(query => query.limit)).toEqual([560])
+  })
+
   it('registers the seven tools with their model-facing descriptions', async () => {
     desk = await bootDesk({ config: { barsDefault: 50, barsCap: 200 } })
     expect(desk.ctx.tools.schemas().map(schema => schema.name).sort()).toEqual([
