@@ -523,6 +523,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     surfaceContext?: boolean
   } | undefined
   const surfaceContext = webRuntimeConfig?.surfaceContext !== false
+  // A patch replaces a row's complete config, so the roster pin below starts from the composed row: a profile layer
+  // in the extra overlay that configures the roster (its roots and default) keeps that configuration.
+  const agentPresetsConfig = composedRows.find(row => row.id === 'agent-presets')?.config as Record<string, unknown> | undefined
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
@@ -543,6 +546,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       id: 'agent-presets',
       config: {
         default: 'standard',
+        ...agentPresetsConfig,
         includeUserRoot: false,
       },
     },
