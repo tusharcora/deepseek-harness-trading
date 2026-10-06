@@ -209,7 +209,7 @@ describe('reads', () => {
     expect(fake.requests[2]?.query.get('limit')).toBe('500')
     expect(fake.requests[2]?.query.get('symbols')).toBeNull()
     await openOrders(http, { assetClass: 'crypto', ticker: 'BTC/USD' })
-    expect(fake.requests[3]?.query.get('symbols')).toBe('BTCUSD')
+    expect(fake.requests[3]?.query.get('symbols')).toBe('BTC/USD')
   })
 })
 

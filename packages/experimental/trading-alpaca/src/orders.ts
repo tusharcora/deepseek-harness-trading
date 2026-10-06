@@ -180,7 +180,8 @@ export async function positions(http: AlpacaHttp): Promise<PositionSnapshot[]> {
  * @returns up to 500 open orders.
  */
 export async function openOrders(http: AlpacaHttp, symbol?: TradingSymbol): Promise<BrokerOrder[]> {
-  const query = { status: 'open', limit: 500, symbols: symbol === undefined ? undefined : pathSymbol(symbol) }
+  // The symbols filter matches crypto only in the slash form (`BTC/USD`); `BTCUSD` returns no orders.
+  const query = { status: 'open', limit: 500, symbols: symbol?.ticker }
   return (await http.request<RawRecord[]>('trading', 'GET', '/v2/orders', { query })).map(mapOrder)
 }
 

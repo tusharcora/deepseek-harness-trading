@@ -165,3 +165,5 @@ Final: minor (deferred): once blocked, the venue stays blocked until restart (a 
 Final: minor (deferred): resume() can reject 'blocked' while status stays 'halted' (safe side)
 Final: minor (deferred): "once when the stream stops for good" wording slightly stale after restart-on-key-change
 ```
+Paper e2e: Ruling: GET /v2/orders symbols filter sends the slash ticker (`BTC/USD`) — probed on paper: `BTCUSD` returned 0 open crypto orders, `BTC/USD` returned 1, so closePosition never cancelled resting sells — cost if wrong: none, the probe is direct evidence
+Paper e2e: complete (alpaca-paper.e2e.ts → 2/2 pass against paper-api.alpaca.markets)
