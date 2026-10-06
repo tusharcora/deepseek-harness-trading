@@ -173,4 +173,24 @@ export const Shared = Schema.union([MissingSchema])
 `)
     expect(() => collectConfigCatalog(root)).toThrow("schema alias 'MissingSchema' must name a const or named value import")
   })
+
+  it('classifies a service class the entry imports from a sibling file and default-exports', () => {
+    const { root, write } = fixture()
+    write('packages/test/provider/src/config.ts', sharedSchema)
+    write('packages/test/provider/src/service.ts', `
+import { Shared, type BrowserConfig } from './config.ts'
+export type Config = BrowserConfig
+export class Browser {
+  static inject = ['web']
+  static Config = Shared
+  constructor(ctx: unknown, config: Config) {}
+}
+`)
+    write('packages/test/provider/src/index.ts', "import { Browser } from './service.ts'\nexport default Browser\n")
+    const provider = collectConfigCatalog(root).find(entry => entry.pkg === '@test/provider')
+    expect(provider?.kind).toBe('config')
+    expect(provider?.inject).toEqual(['web'])
+    expect(new Set(provider?.schemaKeys)).toEqual(new Set(['mode', 'headless', 'endpoint']))
+    expect(provider?.pastes?.[0]?.source).toMatch(/^packages\/test\/provider\/src\/service\.ts:/)
+  })
 })

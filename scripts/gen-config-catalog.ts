@@ -649,19 +649,37 @@ function findInject(ctx: FileCtx, pluginClass: ts.ClassDeclaration | null, viola
   return []
 }
 
+/** A plugin declaration and the file that declares it. */
+interface PluginDecl {
+  decl: ts.ClassDeclaration | ts.FunctionDeclaration
+  ctx: FileCtx
+}
+
+/** Find a top-level class or function declaration by name in one file. */
+function namedDecl(ctx: FileCtx, name: string): PluginDecl | null {
+  for (const s of ctx.sf.statements) {
+    if ((ts.isClassDeclaration(s) || ts.isFunctionDeclaration(s)) && s.name?.text === name) return { decl: s, ctx }
+  }
+  return null
+}
+
 /** Resolve the entry file's default export to its class/function declaration
- * (mirroring the Loader's `unwrapExports`), or null when there is none. */
-function defaultExport(ctx: FileCtx): ts.ClassDeclaration | ts.FunctionDeclaration | null {
+ * (mirroring the Loader's `unwrapExports`), or null when there is none. An
+ * `export default Name` whose `Name` is a named value import from a sibling
+ * `.ts` source resolves to the declaration in that file. */
+function defaultExport(world: World, ctx: FileCtx): PluginDecl | null {
   for (const stmt of ctx.sf.statements) {
     if (ts.isExportAssignment(stmt) && !stmt.isExportEquals && ts.isIdentifier(stmt.expression)) {
       const name = stmt.expression.text
-      for (const s of ctx.sf.statements) {
-        if ((ts.isClassDeclaration(s) || ts.isFunctionDeclaration(s)) && s.name?.text === name) return s
-      }
-      return null
+      const local = namedDecl(ctx, name)
+      if (local !== null) return local
+      const imported = ctx.imports.get(name)
+      if (imported === undefined || imported.typeOnly || !imported.specifier.startsWith('.')
+        || imported.imported === '*' || imported.imported === 'default') return null
+      return namedDecl(loadPackageLocalSource(world, ctx, imported.specifier), imported.imported)
     }
     if ((ts.isClassDeclaration(stmt) || ts.isFunctionDeclaration(stmt))
-      && stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) return stmt
+      && stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) return { decl: stmt, ctx }
   }
   return null
 }
@@ -724,7 +742,10 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // Classify, mirroring the Loader's unwrapExports: the default export IS
     // the plugin when present; else an exported `apply` makes the module
     // namespace the plugin; else the package is a plain library.
-    const dflt = defaultExport(ctx)
+    const found = defaultExport(world, ctx)
+    const dflt = found?.decl ?? null
+    // The file declaring the plugin owns its inject list, config parameter, and schema.
+    const declCtx = found?.ctx ?? ctx
     const apply = applyExport(ctx)
     let pluginClass: ts.ClassDeclaration | null = null
     let configParam: ts.ParameterDeclaration | undefined
@@ -755,7 +776,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
       dir,
       entry: entryRel,
       kind,
-      inject: kind === 'library' || kind === 'seam' ? [] : findInject(ctx, pluginClass, violations),
+      inject: kind === 'library' || kind === 'seam' ? [] : findInject(declCtx, pluginClass, violations),
       ...className !== undefined ? { className } : {},
     }
     entries.push(entry)
@@ -763,7 +784,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
 
     // Resolve the config type and paste its package-local transitive closure.
     if (!configParam.type || !ts.isTypeReferenceNode(configParam.type) || !ts.isIdentifier(configParam.type.typeName)) {
-      violations.push(`${pkg}: config parameter type (${pointer(entryRel, ctx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
+      violations.push(`${pkg}: config parameter type (${pointer(declCtx.rel, declCtx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
       continue
     }
     const typeName = configParam.type.typeName.text
@@ -775,7 +796,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // cannot both render unambiguously, so every resolution is identity-checked
     // by source pointer and a collision is a violation, never a silent skip.
     const pastedDeclByName = new Map<string, string>()
-    const queue: { name: string; from: FileCtx }[] = [{ name: typeName, from: ctx }]
+    const queue: { name: string; from: FileCtx }[] = [{ name: typeName, from: declCtx }]
     for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
       const { name, from } = item
       const resolved = resolveTypeName(from, name, cache, violations)
@@ -825,9 +846,9 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     entry.refs = [...refs.values()].sort((a, b) => a.alias.localeCompare(b.alias))
 
     // Statically walk the runtime schema (when one exists) for the subset check.
-    const schemaExpr = findSchemaExpr(ctx, pluginClass)
+    const schemaExpr = findSchemaExpr(declCtx, pluginClass)
     if (schemaExpr) {
-      const { keys, composes } = walkSchemaExpr(world, ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
+      const { keys, composes } = walkSchemaExpr(world, declCtx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
       entry.schemaKeys = keys
       entry.schemaComposes = composes
     } else {
