@@ -1,15 +1,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import type {
-  AccountSnapshot, Asset, Bar, BrokerOrder, OrderStreamEvent, PositionSnapshot, Quote, VenueStatus,
+  AccountSnapshot, Asset, Bar, BrokerOrder, OrderStreamEvent, PositionSnapshot, Quote, TradingMode, VenueStatus,
 } from '@deepseek-ai/dsh-experimental-trading'
 import { describe, expect, it } from 'vitest'
 import TradingVenueGateway, { VenueError } from '../src/index.ts'
 
 class FakeVenue extends TradingVenueGateway {
   status(): VenueStatus { return 'ready' }
+  mode(): TradingMode { return 'paper' }
+  statusReason(): string { return '' }
   async account(): Promise<AccountSnapshot> { return { equity: 1, cash: 1, lastEquity: 1, buyingPower: 1, tradingBlocked: false } }
   async positions(): Promise<PositionSnapshot[]> { return [] }
   async openOrders(): Promise<BrokerOrder[]> { return [] }
+  async order(): Promise<BrokerOrder | undefined> { return undefined }
   async asset(): Promise<Asset> { throw new VenueError('no assets', 'not-found') }
   async marketOpen(): Promise<boolean> { return true }
   async latestQuote(): Promise<Quote> { return { bid: 1, ask: 1, t: 0 } }

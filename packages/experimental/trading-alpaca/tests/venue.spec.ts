@@ -78,6 +78,7 @@ describe('VenueCore readiness', () => {
     const { venue } = core()
     await venue.prepare()
     expect(venue.status()).toBe('blocked')
+    expect(venue.statusReason()).not.toBe('')
     expect((await venue.account()).equity).toBe(10)
     await expect(venue.submitOrder(request)).rejects.toMatchObject({ code: 'blocked' })
     await expect(venue.resume()).rejects.toMatchObject({ code: 'blocked' })
@@ -432,5 +433,27 @@ describe('VenueCore reads', () => {
     expect((await venue.asset(request.symbol)).minNotional).toBe(10)
     await venue.cancelOrder(brandString<BrokerOrderId>('o-1'))
     expect(fake.requests.find(r => r.path === '/v2/stocks/bars')?.query.get('end')).toBe('2026-10-05T00:00:00.000Z')
+  })
+
+  it('looks up an order by client order id and reports none for an unknown id', async () => {
+    accountConfig(fake, safe)
+    fake.on('GET', '/v2/orders:by_client_order_id', r => r.query.get('client_order_id') === 'c-1'
+      ? { status: 200, body: order }
+      : { status: 404, body: { message: 'order not found' } })
+    const { venue } = core()
+    expect((await venue.order(brandString<ClientOrderId>('c-1')))?.id).toBe('o-1')
+    expect(await venue.order(brandString<ClientOrderId>('c-2'))).toBeUndefined()
+  })
+
+  it('names the reason behind the status', async () => {
+    accountConfig(fake, safe)
+    keysPresent = false
+    const { venue } = core()
+    expect(venue.statusReason()).toBe('Alpaca keys not configured — add them in Settings → Trading')
+    keysPresent = true
+    await venue.prepare()
+    expect(venue.statusReason()).toBe('')
+    await venue.halt('market looks wrong')
+    expect(venue.statusReason()).toBe('market looks wrong')
   })
 })

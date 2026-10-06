@@ -246,6 +246,9 @@ export type OrderStreamEvent =
  */
 export type VenueStatus = 'unconfigured' | 'ready' | 'halted' | 'blocked'
 
+/** Which account a venue trades in: `paper` moves no money, `live` does. */
+export type TradingMode = 'paper' | 'live'
+
 /** Bar history request; without `start` the venue returns the most recent `limit` bars ending at `end` (default now). */
 export interface BarQuery {
   /** Earliest bar start, UTC epoch milliseconds. */

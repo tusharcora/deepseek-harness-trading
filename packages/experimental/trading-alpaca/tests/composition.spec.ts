@@ -152,6 +152,7 @@ describe('trading-alpaca real composition', () => {
   it('applies the safety settings, serves every operation, and keeps a Halt across disposal and reboot', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 200, body: order }))
     fake.on('GET', '/v2/orders', () => ({ status: 200, body: [] }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: order }))
     fake.on('GET', '/v2/positions', () => ({ status: 200, body: [{ symbol: 'BTCUSD', asset_class: 'crypto', side: 'long',
       qty: '0.0002', qty_available: '0', avg_entry_price: '60000', current_price: '60000', market_value: '12', unrealized_pl: '0' }] }))
     fake.on('DELETE', '/v2/positions', () => ({ status: 207, body: [] }))
@@ -168,6 +169,7 @@ describe('trading-alpaca real composition', () => {
     const venue = venueOf(ctx)
     // The credentials provider may start after the venue; the venue sets up once it appears.
     await vi.waitFor(() => { expect(venue.status()).toBe('ready') })
+    expect(venue.statusReason()).toBe('')
     expect(config).toMatchObject({ no_shorting: true, max_margin_multiplier: '1' })
     expect(statuses).toEqual([['ready', 'account safety settings verified']])
     expect(fake.requests.every(r => r.keyId === 'k')).toBe(true)
@@ -176,6 +178,8 @@ describe('trading-alpaca real composition', () => {
     expect((await venue.account()).equity).toBe(10)
     expect(await venue.positions()).toMatchObject([{ symbol: request.symbol, qty: 0.0002, qtyAvailable: 0 }])
     expect(await venue.openOrders()).toEqual([])
+    expect(venue.mode()).toBe('paper')
+    expect((await venue.order(brandString<ClientOrderId>('c-1')))?.id).toBe('o-1')
     expect((await venue.asset(aapl)).tradable).toBe(true)
     expect(await venue.asset(aapl)).not.toHaveProperty('minNotional')
     expect((await venue.asset(request.symbol)).minNotional).toBe(10)

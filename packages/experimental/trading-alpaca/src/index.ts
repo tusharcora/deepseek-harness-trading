@@ -8,8 +8,8 @@
 import { type Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {
-  AccountSnapshot, Asset, Bar, BarQuery, BrokerOrder, BrokerOrderId, BrokerOrderRequest, OrderStreamEvent, PositionSnapshot,
-  Quote, Timeframe, TradingSymbol, VenueStatus,
+  AccountSnapshot, Asset, Bar, BarQuery, BrokerOrder, BrokerOrderId, BrokerOrderRequest, ClientOrderId, OrderStreamEvent,
+  PositionSnapshot, Quote, Timeframe, TradingMode, TradingSymbol, VenueStatus,
 } from '@deepseek-ai/dsh-experimental-trading'
 import { TradingVenueGateway, VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -44,6 +44,7 @@ export class AlpacaVenue extends TradingVenueGateway {
   static Config: z<Partial<Config>, Config> = Config
 
   private readonly core: VenueCore
+  private readonly accountMode: TradingMode
   /** Resolved with the Halt-state domain once init opens it; writes wait for it. */
   private readonly domain = Promise.withResolvers<Domain<typeof tradingSafetyDomainSpec>>()
   private readonly warn = (message: string): void => { this.ctx.logger.warn(`trading-alpaca: ${message}`) }
@@ -57,6 +58,7 @@ export class AlpacaVenue extends TradingVenueGateway {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx)
+    this.accountMode = config.mode
     const environment = launchEnvironmentOf(ctx)
     const endpoints = resolveEndpoints(config, environment.get('DSH_TRADING_LIVE')?.value)
     const keys = async (): Promise<AlpacaKeys | undefined> => {
@@ -116,12 +118,18 @@ export class AlpacaVenue extends TradingVenueGateway {
 
   /** @returns the venue status. */
   status(): VenueStatus { return this.core.status() }
+  /** @returns the configured account mode. */
+  mode(): TradingMode { return this.accountMode }
+  /** @returns the readable cause of the current status. */
+  statusReason(): string { return this.core.statusReason() }
   /** @returns the account snapshot. */
   account(): Promise<AccountSnapshot> { return this.core.account() }
   /** @returns open positions. */
   positions(): Promise<PositionSnapshot[]> { return this.core.positions() }
   /** @returns open orders. */
   openOrders(): Promise<BrokerOrder[]> { return this.core.openOrders() }
+  /** @param clientOrderId - idempotency key. @returns the order, or undefined when Alpaca has none. */
+  order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined> { return this.core.order(clientOrderId) }
   /** @param symbol - instrument. @returns broker facts. */
   asset(symbol: TradingSymbol): Promise<Asset> { return this.core.asset(symbol) }
   /** @param symbol - instrument. @returns whether its market is open. */

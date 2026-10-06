@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-experimental-trading-alpaca/venue
  */
 import type {
-  AccountSnapshot, Asset, Bar, BarQuery, BrokerOrder, BrokerOrderId, BrokerOrderRequest, OrderStreamEvent, PositionSnapshot,
+  AccountSnapshot, Asset, Bar, BarQuery, BrokerOrder, BrokerOrderId, BrokerOrderRequest, ClientOrderId, OrderStreamEvent, PositionSnapshot,
   Quote, Timeframe, TradingSymbol, VenueStatus,
 } from '@deepseek-ai/dsh-experimental-trading'
 import { VenueError } from '@deepseek-ai/dsh-experimental-trading-venue'
@@ -114,6 +114,26 @@ export class VenueCore {
   async openOrders(): Promise<BrokerOrder[]> {
     await this.readable()
     return orders.openOrders(this.deps.http)
+  }
+
+  /**
+   * Look up one order by client order id once setup has run.
+   * @param clientOrderId - idempotency key.
+   * @returns the order, or undefined when Alpaca has none with that key.
+   */
+  async order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined> {
+    await this.readable()
+    return orders.orderByClientId(this.deps.http, clientOrderId)
+  }
+
+  /**
+   * Readable cause of the current status.
+   * @returns the saved Halt reason, the block reason, the setup message, or an empty string while ready.
+   */
+  statusReason(): string {
+    if (this.safety.isHalted()) return this.deps.store.get().haltReason
+    if (this.blockedReason !== undefined) return this.blockedReason
+    return this.configured ? '' : UNCONFIGURED
   }
 
   /**

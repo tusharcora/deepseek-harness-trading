@@ -809,10 +809,12 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   BrokerOrder: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   BrokerOrderId: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   BrokerOrderRequest: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  ClientOrderId: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   OrderStreamEvent: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   PositionSnapshot: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   Quote: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   Timeframe: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
+  TradingMode: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   TradingSymbol: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
   VenueStatus: 'trading domain type is owned by packages/experimental/trading/src/types.ts',
 }

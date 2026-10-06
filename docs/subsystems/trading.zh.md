@@ -26,6 +26,19 @@ A trading venue. Every method that reaches the broker resolves the API keys at c
 abstract status(): VenueStatus
 
 /**
+ * Account mode this venue trades in, from provider configuration.
+ * @returns `paper` or `live`.
+ */
+abstract mode(): TradingMode
+
+/**
+ * Readable cause of the current status, for the user's status display.
+ * @returns the saved Halt reason while halted, the block reason while blocked, why setup has not completed while
+ *   unconfigured, and an empty string while ready.
+ */
+abstract statusReason(): string
+
+/**
  * Read the account.
  * @returns equity, cash, last equity, buying power, and whether trading is blocked.
  */
@@ -42,6 +55,13 @@ abstract positions(): Promise<PositionSnapshot[]>
  * @returns every order the broker still works.
  */
 abstract openOrders(): Promise<BrokerOrder[]>
+
+/**
+ * Look up one order by the idempotency key it was submitted with, whether it is still open or not.
+ * @param clientOrderId - idempotency key the order was submitted with.
+ * @returns the order, or undefined when the broker has no order with that key.
+ */
+abstract order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>
 
 /**
  * Read broker facts for one instrument.

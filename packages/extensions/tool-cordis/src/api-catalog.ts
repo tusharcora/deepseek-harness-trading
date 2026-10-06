@@ -2804,6 +2804,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the venue status.',
       },
       {
+        signature: 'abstract mode(): TradingMode',
+        description: 'Account mode this venue trades in, from provider configuration.',
+        parameters: [],
+        returns: '`paper` or `live`.',
+      },
+      {
+        signature: 'abstract statusReason(): string',
+        description: 'Readable cause of the current status, for the user\'s status display.',
+        parameters: [],
+        returns: 'the saved Halt reason while halted, the block reason while blocked, why setup has not completed while unconfigured, and an empty string while ready.',
+      },
+      {
         signature: 'abstract account(): Promise<AccountSnapshot>',
         description: 'Read the account.',
         parameters: [],
@@ -2820,6 +2832,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read open orders.',
         parameters: [],
         returns: 'every order the broker still works.',
+      },
+      {
+        signature: 'abstract order(clientOrderId: ClientOrderId): Promise<BrokerOrder | undefined>',
+        description: 'Look up one order by the idempotency key it was submitted with, whether it is still open or not.',
+        parameters: [{ name: 'clientOrderId', description: 'idempotency key the order was submitted with.' }],
+        returns: 'the order, or undefined when the broker has no order with that key.',
       },
       {
         signature: 'abstract asset(symbol: TradingSymbol): Promise<Asset>',
@@ -6526,6 +6544,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolSchema',
     declaration: 'export interface ToolSchema {\n    name: string;\n    description: string;\n    parameters: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'TradingMode',
+    declaration: 'export type TradingMode = \'paper\' | \'live\';',
   },
   {
     name: 'TradingSymbol',

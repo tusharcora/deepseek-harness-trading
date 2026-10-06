@@ -86,6 +86,15 @@ describe('checkRisk, exposure-increasing orders', () => {
   it('denies everything while halted', () => {
     expect(failed(buy, { ...snapshot, halted: true })).toEqual(['halted'])
   })
+
+  it('describes the quote-age check without the clock when it passes or does not apply', () => {
+    const detail = (order: OrderRequest, snap: RiskSnapshot = snapshot): string | undefined =>
+      checkRisk(order, snap, limits).checks.find(c => c.id === 'stale-quote')?.detail
+    expect(detail(buy)).toBe('quote is at most 30 s old')
+    expect(detail(buy, { ...snapshot, quote: { ...snapshot.quote, t: 900_000 } })).toBe('quote is 100 s old (max 30 s)')
+    expect(detail({ ...buy, type: 'limit', limitPrice: 62_000 })).toBe('limit orders do not need a fresh quote')
+    expect(detail(buy, { ...snapshot, marketOpen: false })).toBe('market closed; the quote age is not checked')
+  })
 })
 
 describe('checkRisk, reduce-only exits', () => {

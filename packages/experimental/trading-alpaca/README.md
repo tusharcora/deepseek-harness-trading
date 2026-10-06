@@ -79,7 +79,7 @@ The trading host decides. Any trading host other than `paper-api.alpaca.markets`
 | `ready` | Setup verified the safety settings. |
 | `unconfigured` | Keys are missing or setup has not completed yet, for example because Alpaca was unavailable or rate-limited; the next venue call retries setup. |
 
-Every change and setup result is published as `trading/venue-status`. `submitOrder` refuses while `halted` (`halted`) or `blocked` (`blocked`); `resume` refuses while `unconfigured` or `blocked`. Reads, `cancelOrder`, `closePosition`, and `flatten` run while halted or blocked.
+`statusReason()` returns the saved Halt reason while `halted`, the block reason while `blocked`, the missing-keys message while `unconfigured`, and an empty string while `ready`. Every change and setup result is published as `trading/venue-status`. `submitOrder` refuses while `halted` (`halted`) or `blocked` (`blocked`); `resume` refuses while `unconfigured` or `blocked`. Reads, `cancelOrder`, `closePosition`, and `flatten` run while halted or blocked.
 
 ### Account safety
 
@@ -100,6 +100,8 @@ Numbers are sent as plain decimal strings, never in exponent notation, and every
 - A failure in transit (`unavailable`) triggers two lookups by client order id, `lookupConfirmMs` apart; when neither finds the order, `submitOrder` throws `unavailable` "the order was not placed".
 - A 2xx response that cannot be read, or that names a different client order id, triggers the same two lookups; when neither finds the order, `submitOrder` throws `unknown-outcome`.
 - A lookup that fails, or returns an order with a different client order id, throws `unknown-outcome`.
+
+`order(clientOrderId)` reads `GET /v2/orders:by_client_order_id`; a 404 is `undefined`.
 
 ### Closing positions
 
