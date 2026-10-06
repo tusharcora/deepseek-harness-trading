@@ -6020,6 +6020,31 @@ importers:
         specifier: ^4.19.2
         version: 4.22.4
 
+  packages/experimental/bundle-trading:
+    dependencies:
+      '@deepseek-ai/dsh-experimental-tool-trading':
+        specifier: workspace:^
+        version: link:../tool-trading
+      '@deepseek-ai/dsh-experimental-trading':
+        specifier: workspace:^
+        version: link:../trading
+      '@deepseek-ai/dsh-experimental-trading-alpaca':
+        specifier: workspace:^
+        version: link:../trading-alpaca
+      '@deepseek-ai/dsh-experimental-trading-venue':
+        specifier: workspace:^
+        version: link:../trading-venue
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.1
+
   packages/experimental/client-ui-agent-team:
     dependencies:
       react:

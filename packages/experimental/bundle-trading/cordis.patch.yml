@@ -1,0 +1,64 @@
+# Experimental trading profile layer. Apply after dsh-base and dsh-web-app:
+#
+#   dsh --profile trading --from-default-profile web
+#   dsh plugin --profile trading add @deepseek-ai/dsh-experimental-bundle-trading
+#
+# The trader agent reaches the broker only through the trading tools, whose orders the
+# user approves one by one. This layer removes the other ways a model could reach it:
+# every preset except `trader` (and with them shell, file, code, workflow, delegation,
+# and extension tools), the MCP resource tools on the host plane, and the cordis
+# runners that let a model define Host or Client plugins. The Terminal tab stays.
+
+- id: mcp-resources
+  disabled: true
+
+- id: cordis-host-runner
+  disabled: true
+
+- id: cordis-client-runner
+  disabled: true
+
+# The cordis browser view runs on the client runner disabled above.
+- id: ui-cordis
+  disabled: true
+
+# Only the trader preset is selectable. Its root is this package's presets directory,
+# found through the profile's node_modules, where `dsh plugin add` installed the package.
+# A saved default naming another preset makes new sessions fail with an error that names
+# it; choose Trader as the default (or turn off mode selection) in Settings to clear it.
+- id: agent-presets
+  config:
+    default: trader
+    includeShippedRoot: false
+    includeUserRoot: false
+    roots:
+      - path: !!js >-
+          process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(
+          process.getBuiltinModule('node:module').createRequire(baseUrl)
+          .resolve('@deepseek-ai/dsh-experimental-bundle-trading/package.json')), 'presets')
+        trust: system
+
+- insert:
+    # Paper trading. Live mode also needs DSH_TRADING_LIVE=1 at launch.
+    - id: trading-alpaca
+      name: '@deepseek-ai/dsh-experimental-trading-alpaca'
+      config:
+        mode: paper
+
+    # The order executor stays on the host plane so every order path shares one lock,
+    # one set of reservations, and one journal; its tools mount only in the trader preset.
+    - id: trading-executor
+      name: '@deepseek-ai/dsh-experimental-tool-trading'
+      config:
+        maxOrderNotional: 1000
+        maxPositionPct: 0.2
+        dailyLossPct: 0.03
+        maxOrdersPerDay: 20
+        allowShort: false
+        allowMargin: false
+        allowlist: []
+        denylist: []
+        staleQuoteMs: 30000
+        driftTolerance: 0.01
+        barsDefault: 100
+        barsCap: 500

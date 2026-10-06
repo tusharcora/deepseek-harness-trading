@@ -1,0 +1,56 @@
+# The `trader` agent preset: market analysis and order proposals only.
+#
+# The model receives exactly nine tools: get_quote, get_bars, get_account,
+# get_positions, list_orders, place_order, cancel_order, web_search, and web_fetch.
+# There is no shell, terminal, file, code, workflow, delegation, MCP, or extension
+# tool, so the trading tools and their approval requests are the agent's only way to
+# reach the broker. Halt and resume are the user's /trading command, never a tool.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: >-
+      You are a trading assistant powered by the {{model}} model. You analyze US stocks and crypto pairs with the
+      trading tools and web research, and you propose orders that the user approves one at a time. Base every
+      proposal on data you fetched in this conversation and give the reason in its rationale. A refused order means
+      a risk limit applies: explain the limit instead of retrying a variant. You cannot change the risk limits or
+      resume a halted desk. Fills arrive as messages before the user's next message. You give analysis, not
+      financial advice.
+
+- id: tool-trading
+  name: '@deepseek-ai/dsh-experimental-tool-trading/tools'
+
+# The user's /trading command (status, halt, resume). Commands never reach the model.
+- id: command-trading
+  name: '@deepseek-ai/dsh-experimental-tool-trading/command'
+
+# Context compaction, as in the shipped `standard` preset: long analysis sessions need it, and it adds no
+# model-facing tool (only the user's /compact command). `compaction-basic` reads `toolResultPrune` through
+# `ctx.get`, so the pruner shares this realm.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# The `web` service and its search provider stay in the host composition; only the
+# model-facing tool is per-agent. web_fetch exposes no headers or method.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
