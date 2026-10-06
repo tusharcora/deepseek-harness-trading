@@ -70,6 +70,29 @@ describe('submitOrder', () => {
     expect(waits).toEqual([50])
   })
 
+  it('recognizes the duplicate client order id that Alpaca reports with its generic validation code', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 42210000, message: 'client_order_id must be unique' } }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 200, body: placed }))
+    expect((await submitOrder(http, request, timing())).id).toBe('o-1')
+    expect(lookups()).toBe(1)
+  })
+
+  it('reports an unknown outcome when the generic-code duplicate is not found by two lookups', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 42210000, message: 'Client_Order_ID must be unique' } }))
+    fake.on('GET', '/v2/orders:by_client_order_id', () => ({ status: 404, body: { message: 'order not found' } }))
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({
+      code: 'unknown-outcome', message: expect.stringContaining('c-1') as unknown,
+    })
+    expect(lookups()).toBe(2)
+    expect(waits).toEqual([50])
+  })
+
+  it('passes another generic validation rejection through without a lookup', async () => {
+    fake.on('POST', '/v2/orders', () => ({ status: 422, body: { code: 42210000, message: 'sub-penny increment does not fulfill' } }))
+    await expect(submitOrder(http, request, timing())).rejects.toMatchObject({ code: 'rejected', brokerCode: 42210000 })
+    expect(lookups()).toBe(0)
+  })
+
   it('finds an order that appears only on the delayed second lookup', async () => {
     fake.on('POST', '/v2/orders', () => ({ status: 503, body: { message: 'busy' } }))
     let seen = 0

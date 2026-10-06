@@ -95,7 +95,7 @@ While halted, `closePosition` and `flatten` run inside a flatten window: the pro
 
 Numbers are sent as plain decimal strings, never in exponent notation, and every order carries its `client_order_id`, so a retry never duplicates:
 
-- A duplicate-id rejection (Alpaca code `40010001`) triggers two lookups by client order id, `lookupConfirmMs` apart, and returns the existing order; when neither finds it, `submitOrder` throws `unknown-outcome` naming the client order id.
+- A duplicate-id rejection (Alpaca code `40010001`, or a `rejected` error whose message contains `client_order_id must be unique`, which Alpaca sends under its generic validation code `42210000`) triggers two lookups by client order id, `lookupConfirmMs` apart, and returns the existing order; when neither finds it, `submitOrder` throws `unknown-outcome` naming the client order id.
 - The Halt is checked again immediately before the order is sent, after the keys resolve, so a Halt that arrives while the request is being prepared sends nothing and `submitOrder` throws `halted`.
 - A failure in transit (`unavailable`) triggers two lookups by client order id, `lookupConfirmMs` apart; when neither finds the order, `submitOrder` throws `unavailable` "the order was not placed".
 - A 2xx response that cannot be read, or that names a different client order id, triggers the same two lookups; when neither finds the order, `submitOrder` throws `unknown-outcome`.

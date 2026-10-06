@@ -14,8 +14,15 @@ import { AcceptedUnreadableError, type AlpacaHttp } from './http.ts'
 import { decimalString, mapAccount, mapOrder, mapPosition, pathSymbol } from './map.ts'
 import type { RawRecord } from './types.ts'
 
-/** Alpaca's error code for a reused client order id. */
+/** Alpaca's documented error code for a reused client order id. */
 const DUPLICATE_CLIENT_ORDER_ID = 40010001
+/** Message Alpaca sends for a reused client order id under its generic validation code `42210000`. */
+const DUPLICATE_CLIENT_ORDER_ID_MESSAGE = 'client_order_id must be unique'
+
+function isDuplicateClientOrderId(error: VenueError): boolean {
+  return error.brokerCode === DUPLICATE_CLIENT_ORDER_ID
+    || (error.code === 'rejected' && error.message.toLowerCase().includes(DUPLICATE_CLIENT_ORDER_ID_MESSAGE))
+}
 
 /** Waits used by submission confirmation and position closing. */
 export interface OrderTiming {
@@ -110,7 +117,7 @@ export async function submitOrder(
     // which carries a code (such as `halted`) that none of the branches below handles.
     if (!(error instanceof VenueError)) throw error
     if (error instanceof AcceptedUnreadableError) return confirmAccepted(http, request.clientOrderId, timing)
-    if (error.brokerCode === DUPLICATE_CLIENT_ORDER_ID) {
+    if (isDuplicateClientOrderId(error)) {
       // Alpaca says the id exists, so an empty lookup means it is not readable yet, never that nothing was placed.
       const existing = await confirmTwice(http, request.clientOrderId, timing)
       if (existing !== undefined) return existing
