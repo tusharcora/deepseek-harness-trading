@@ -41,7 +41,7 @@ const entrySchema = zod.object({
 export const tradingJournalSpec = defineDomain({
   name: 'trading_journal',
   version: 1,
-  tables: { entries: domainTable<string, JournalEntry>(entrySchema) },
+  tables: { entries: domainTable<ProposalId, JournalEntry>(entrySchema) },
 })
 
 /** Fields a lifecycle update may change. */
