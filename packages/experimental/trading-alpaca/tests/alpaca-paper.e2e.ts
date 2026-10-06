@@ -2,14 +2,15 @@
  * Opt-in Alpaca paper e2e. Runs only when ALPACA_API_KEY, ALPACA_SECRET_KEY, and DSH_ALPACA_PAPER_E2E=1 are all set;
  * the e2e config also loads the repository root `.env`, so keys placed there count. Effects on the paper account named
  * by ALPACA_API_KEY: sets no_shorting=true and max_margin_multiplier=1 (they stay set); places and cancels a
- * far-from-market BTC/USD limit order; buys a tiny amount of BTC/USD and closes the whole BTC/USD position. The second
+ * far-from-market BTC/USD limit order worth about $12; buys about $12 of BTC/USD (at least 0.0002 BTC) and closes the
+ * whole BTC/USD position. Orders are sized above Alpaca's $10 crypto minimum order value. The second
  * test refuses to run if the account already holds BTC/USD or has open BTC/USD orders. Every order the tests place has
  * a client order id starting with a per-run prefix; cleanup cancels only open orders with that prefix and, in the
  * second test, closes any remaining BTC/USD position. Cleanup is best-effort: a failed run can leave a tiny BTC/USD
  * position or order. Tests are not retried.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { ClientOrderId, OrderUpdate } from '@deepseek-ai/dsh-experimental-trading'
+import type { ClientOrderId, OrderUpdate, PositionSnapshot } from '@deepseek-ai/dsh-experimental-trading'
 import { describe, expect, it } from 'vitest'
 import { AlpacaHttp } from '../src/http.ts'
 import { INITIAL_SAFETY_STATE } from '../src/safety.ts'
@@ -36,6 +37,15 @@ function paperVenue(): VenueCore {
 }
 
 const btc = { assetClass: 'crypto', ticker: 'BTC/USD' } as const
+
+/** Order value the tests aim for, in dollars; above Alpaca's $10 crypto minimum with margin. */
+const ORDER_DOLLARS = 12
+
+/**
+ * @param price - BTC price in dollars.
+ * @returns the BTC quantity worth at least `ORDER_DOLLARS` at `price`, rounded up to 6 decimals.
+ */
+const btcWorth = (price: number): number => Math.ceil((ORDER_DOLLARS / price) * 1e6) / 1e6
 
 /** @returns a client order id prefix unique to this run. */
 const runPrefix = (): string => `dsh-e2e-${String(Date.now())}-`
@@ -101,7 +111,8 @@ describe.skipIf(!optedIn)('Alpaca paper', { retry: 0 }, () => {
         await sleep(3_000)
         const quote = await venue.latestQuote(btc)
         const clientOrderId = brandString<ClientOrderId>(`${prefix}far`)
-        const request = { symbol: btc, side: 'buy', qty: 0.0001, type: 'limit', limitPrice: Math.floor(quote.bid * 0.5),
+        const limitPrice = Math.floor(quote.bid * 0.5)
+        const request = { symbol: btc, side: 'buy', qty: btcWorth(limitPrice), type: 'limit', limitPrice,
           timeInForce: 'gtc', clientOrderId } as const
         const first = await venue.submitOrder(request)
         const again = await venue.submitOrder(request)
@@ -129,22 +140,25 @@ describe.skipIf(!optedIn)('Alpaca paper', { retry: 0 }, () => {
     if (holding || resting) {
       throw new Error('this paper account already holds BTC/USD or has open BTC/USD orders; use a clean paper account')
     }
-    const btcHeld = async (): Promise<number> => (await venue.positions()).find(p => p.symbol.ticker === 'BTC/USD')?.qty ?? 0
+    const btcPosition = async (): Promise<PositionSnapshot | undefined> =>
+      (await venue.positions()).find(p => p.symbol.ticker === 'BTC/USD')
+    const btcHeld = async (): Promise<number> => (await btcPosition())?.qty ?? 0
     await withCleanup(async () => {
       const quote = await venue.latestQuote(btc)
-      await venue.submitOrder({ symbol: btc, side: 'buy', qty: 0.0002, type: 'limit', limitPrice: Math.ceil(quote.ask * 1.02),
-        timeInForce: 'ioc', clientOrderId: brandString<ClientOrderId>(`${prefix}buy`) })
-      let held = 0
-      for (let i = 0; i < 20 && held === 0; i++) {
+      await venue.submitOrder({ symbol: btc, side: 'buy', qty: Math.max(0.0002, btcWorth(quote.ask)), type: 'limit',
+        limitPrice: Math.ceil(quote.ask * 1.02), timeInForce: 'ioc', clientOrderId: brandString<ClientOrderId>(`${prefix}buy`) })
+      // Alpaca shows the filled position before its coins are sellable: qty_available stays 0 for a moment.
+      let available = 0
+      for (let i = 0; i < 30 && available <= 0; i++) {
         await sleep(500)
-        held = await btcHeld()
+        available = (await btcPosition())?.qtyAvailable ?? 0
       }
-      expect(held).toBeGreaterThan(0)
-      await venue.submitOrder({ symbol: btc, side: 'sell', qty: held, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
+      expect(available).toBeGreaterThan(0)
+      await venue.submitOrder({ symbol: btc, side: 'sell', qty: available, type: 'limit', limitPrice: Math.ceil(quote.ask * 3),
         timeInForce: 'gtc', clientOrderId: brandString<ClientOrderId>(`${prefix}rest`) })
       const closing = await venue.closePosition(btc)
       expect(closing.side).toBe('sell')
-      let remaining = held
+      let remaining = await btcHeld()
       for (let i = 0; i < 20 && remaining !== 0; i++) {
         await sleep(500)
         remaining = await btcHeld()
